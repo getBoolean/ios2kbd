@@ -16,7 +16,6 @@ Only one device has been tested so far:
 | --- | --- | --- | --- |
 | iPad Pro 12.9-inch (6th generation, M2, `iPad14,5`) | iPadOS 17.0 | Dopamine (rootless) | Nintendo Switch 2 (SmileBASIC), macOS, Windows |
 
-
 ### Should work, untested
 
 Any iPad or iPhone that meets all of these:
