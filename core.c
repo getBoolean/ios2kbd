@@ -17,7 +17,7 @@ enum {
     POLL_WAIT_MS = 60000,        // for the host to start reading the keyboard
     POLL_INTERVAL_MS = 100,
     SETTLE_MS = 3000,            // neutral reports before typing
-    KEY_GAP_MS = 30,
+    HOLD_KEY_MS = 5,             // each key stays down this long
     HOLD_MS = 1000,              // neutral reports after typing, before restoring
     NEUTRAL_INTERVAL_MS = 30,
     RESTORE_ATTEMPTS = 4,        // the function-registration race can strand a function
@@ -288,7 +288,9 @@ static bool send_key(const ios2kbd_env *env, uint8_t modifier, uint8_t usage) {
     report[0] = modifier;
     report[2] = usage;
     if (env->keyboard.send(env->keyboard.context, report) != IOS2KBD_SEND_OK) return false;
-    if (env->turbo_typing || env->fast_typing) env->sleep_ms(env->turbo_typing ? 5 : 10);
+    // The hold is the only pause per key. Without it, a key-up can replace the
+    // key-down before the host reads it, and keys merge into shortcuts.
+    env->sleep_ms(HOLD_KEY_MS);
     return env->keyboard.send(env->keyboard.context, neutral_report) == IOS2KBD_SEND_OK;
 }
 
@@ -302,14 +304,9 @@ static ios2kbd_typing type_text(const ios2kbd_env *env, const char *text) {
         return *env->interrupted ? IOS2KBD_INTERRUPTED : IOS2KBD_NEVER_POLLED;
     env->say("host is reading the keyboard; typing");
     if (!hold_neutral(env, SETTLE_MS)) return IOS2KBD_HOST_LOST;
-    unsigned key_gap = env->turbo_typing ? 0 : env->fast_typing ? 5 : KEY_GAP_MS;
-    // Pause after Enter. These values came with file transfer and were never
-    // measured against a target.
-    unsigned line_gap = (env->turbo_typing || env->fast_typing) ? 100 : 300;
     for (const char *c = text; *c; c++) {
         if (*env->interrupted) return IOS2KBD_INTERRUPTED;
         if (!press_and_release(env, *c)) return IOS2KBD_HOST_LOST;
-        env->sleep_ms(*c == '\n' ? line_gap : key_gap);
         if (*c == '\n' && env->clear_autoindent) {
             // The new line contains only the editor's inherited indentation.
             // Select it and forward-delete the selection; with nothing selected
@@ -321,7 +318,6 @@ static ios2kbd_typing type_text(const ios2kbd_env *env, const char *text) {
                 ? send_key(env, LEFT_GUI | LEFT_SHIFT, 0x50)
                 : send_key(env, 0, 0x4A) && send_key(env, LEFT_SHIFT, 0x4D);
             if (!selected || !send_key(env, 0, 0x4C)) return IOS2KBD_HOST_LOST;
-            env->sleep_ms(key_gap);
         }
         size_t typed = (size_t)(c - text) + 1;
         if (typed % 1000 == 0) {

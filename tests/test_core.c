@@ -311,36 +311,15 @@ static void test_clears_autoindent_with_mac_keys(void) {
     harness_free(&h);
 }
 
-static void test_fast_timing(void) {
-    harness slow, fast;
-    harness_init(&slow);
-    slow.env.clear_autoindent = true;
-    ios2kbd_outcome a = ios2kbd_run(&slow.env, "A\n B");
-    unsigned long slow_ms = slept_ms;
-    harness_init(&fast);
-    fast.env.clear_autoindent = true;
-    fast.env.fast_typing = true;
-    ios2kbd_outcome b = ios2kbd_run(&fast.env, "A\n B");
-    CHECK(a.typing == IOS2KBD_TYPED && b.typing == IOS2KBD_TYPED &&
-          b.restore == IOS2KBD_RESTORED, "fast run types and restores");
-    CHECK(slow_ms == slept_ms + 230, "fast mode reduces character, Enter and cleanup gaps");
-    CHECK(slow.keyboard.sent_count == fast.keyboard.sent_count &&
-          memcmp(slow.keyboard.sent, fast.keyboard.sent,
-                 slow.keyboard.sent_count * IOS2KBD_REPORT_LENGTH) == 0,
-          "fast mode sends identical keyboard reports");
-    unsigned long fast_ms = slept_ms;
-    harness turbo; harness_init(&turbo);
-    turbo.env.clear_autoindent = true;
-    turbo.env.turbo_typing = true;
-    ios2kbd_outcome t = ios2kbd_run(&turbo.env, "A\n B");
-    CHECK(t.typing == IOS2KBD_TYPED && t.restore == IOS2KBD_RESTORED,
-          "turbo run types and restores");
-    CHECK(fast_ms == slept_ms + 55, "turbo reduces key hold and gaps but retains Enter delay");
-    CHECK(fast.keyboard.sent_count == turbo.keyboard.sent_count &&
-          memcmp(fast.keyboard.sent, turbo.keyboard.sent,
-                 fast.keyboard.sent_count * IOS2KBD_REPORT_LENGTH) == 0,
-          "turbo sends identical keyboard reports");
-    harness_free(&slow); harness_free(&fast); harness_free(&turbo);
+static void test_key_hold(void) {
+    harness one, two;
+    harness_init(&one);
+    ios2kbd_run(&one.env, "A");
+    unsigned long one_ms = slept_ms;
+    harness_init(&two);
+    ios2kbd_run(&two.env, "AB");
+    CHECK(slept_ms == one_ms + 5, "each key adds only its 5 ms hold (got %lu vs %lu)", slept_ms, one_ms);
+    harness_free(&one); harness_free(&two);
 }
 
 static void test_interrupt_during_typing(void) {
@@ -465,7 +444,7 @@ int main(void) {
     test_keycodes();
     test_clears_autoindent();
     test_clears_autoindent_with_mac_keys();
-    test_fast_timing();
+    test_key_hold();
     test_class_replies();
     test_keyboard_description();
     test_types_and_restores();

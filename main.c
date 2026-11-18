@@ -9,8 +9,8 @@
 #include <string.h>
 #include <unistd.h>
 
-#define USAGE "usage: ios2kbd [--fast|--turbo] [--caps-lock] [--mac] [--] [TEXT...]\n" \
-              "       ios2kbd [--fast|--turbo] [--caps-lock] [--mac] --file PATH\n" \
+#define USAGE "usage: ios2kbd [--caps-lock] [--mac] [--] [TEXT...]\n" \
+              "       ios2kbd [--caps-lock] [--mac] --file PATH\n" \
               "TEXT or the file: 1-%d bytes of printable ASCII and newlines.\n"
 #define STOCK_PATH "/var/jb/var/lib/ios2kbd/stock-description.plist"
 
@@ -53,12 +53,10 @@ static bool read_file(const char *path, char *text) {
 
 int main(int argc, char **argv) {
     static char text[IOS2KBD_MAX_TEXT + 2];
-    bool caps_lock = false, fast = false, turbo = false, mac = false;
+    bool caps_lock = false, mac = false;
     while (argc > 1) {
         if (strcmp(argv[1], "--caps-lock") == 0) caps_lock = true;
         else if (strcmp(argv[1], "--mac") == 0) mac = true;
-        else if (strcmp(argv[1], "--fast") == 0) fast = true;
-        else if (strcmp(argv[1], "--turbo") == 0) { fast = true; turbo = true; }
         else break;
         argc--; argv++;
     }
@@ -99,12 +97,12 @@ int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
 
     ios2kbd_env env = {
-        .turbo_typing = turbo, .fast_typing = fast, .clear_autoindent = file_mode, .mac_line_keys = mac,
+        .clear_autoindent = file_mode, .mac_line_keys = mac,
         .stock_path = STOCK_PATH, .sleep_ms = sleep_ms, .say = say,
         .interrupted = &interrupted,
     };
     if (!ios2kbd_iokit_usb(&env.usb)) { say("USB device controller unavailable"); return 1; }
-    ios2kbd_iokit_keyboard(&env.keyboard, turbo ? 4 : fast ? 6 : 10);
+    ios2kbd_iokit_keyboard(&env.keyboard);
 
     ios2kbd_outcome outcome = ios2kbd_run(&env, text);
     if (outcome.typing == IOS2KBD_TYPED) printf("ios2kbd: typed %zu bytes\n", strlen(text));

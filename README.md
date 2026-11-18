@@ -70,20 +70,20 @@ sudo ios2kbd --file /var/mobile/bootstrap.bas
 | Option | Effect |
 | --- | --- |
 | `--file PATH` | Type a file: up to 1 MiB of printable ASCII and line breaks. CRLF and CR become Enter. After each Enter it clears the editor's auto-indent, so each line keeps only its own leading spaces. |
-| `--fast` | USB bInterval 6, 10 ms key hold, 5 ms gap between characters, 100 ms after Enter. Check that the editor keeps up. |
-| `--turbo` | Experimental. bInterval 4, 5 ms key hold, no gap between characters, 100 ms after Enter. Check for dropped characters before you save or run anything. |
 | `--caps-lock` | Swaps upper and lower case before typing. Use it when the target types letters in reversed case. It does not read or change the target's Caps Lock state. |
 | `--mac` | With `--file`, clears the editor's auto-indent with macOS keys (Command+Shift+Left, then forward Delete). Without it, ios2kbd uses Home, Shift+End, Delete, which only scroll on macOS. Tested in Sublime Text. |
 | `--` | Everything after it is text, even if it starts with `--`. |
 | `--help` | Prints the usage. |
 
-The tested SmileBASIC run was:
+Tested with SmileBASIC on the Switch 2:
 
 ```sh
-sudo ios2kbd --turbo --caps-lock --file /var/mobile/bootstrap.bas
+sudo ios2kbd --caps-lock --file /var/mobile/bootstrap.bas
 ```
 
 This only types the source. Save and run it in SmileBASIC afterward.
+
+Each key is held down for 5 ms, with USB polling at bInterval 4. There is no extra pause between keys or after Enter. Check the typed text for dropped characters before you save or run it.
 
 An option ios2kbd doesn't recognise stops it with an error instead of being typed as text.
 
