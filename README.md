@@ -1,20 +1,52 @@
 # ipad2jb
 
-Type payloads into a console from a jailbroken iPad or iPhone.
+Type payloads into a console from a jailbroken iPad or iPhone with USB-C.
 
 ipad2jb turns the device's USB-C port into a USB keyboard for one run. It types a payload file, such as a SmileBASIC bootstrap, into whatever the device is plugged into, then puts the port back to normal USB. You don't need a Mac or a microcontroller during the run.
 
-Tested on an M2 iPad Pro (iPadOS 17.0, Dopamine rootless), typing into a Nintendo Switch 2 and into macOS.
-
 > **Status:** ipad2jb is a command-line tool for jailbroken devices for now. A TrollStore app and a jailbreak app that run the same core are planned.
+
+## Device support
+
+### Tested
+
+Only one device has been tested so far:
+
+| Device | OS | Jailbreak | Targets typed into |
+| --- | --- | --- | --- |
+| iPad Pro 12.9-inch (6th generation, M2, `iPad14,5`) | iPadOS 17.0 | Dopamine (rootless) | Nintendo Switch 2 (SmileBASIC), macOS |
+
+### Should work, untested
+
+Any iPad or iPhone that meets all of these:
+
+- **USB-C port.** USB-C iPads are the iPad Pro (2018 and later), iPad Air (4th generation and later), iPad mini (6th generation and later) and iPad (10th generation and later). USB-C iPhones are the iPhone 15 and later.
+- **iOS or iPadOS 15.0 or later.** The binary is built for iOS 15.0 and up.
+- **A rootless jailbreak** (installs under `/var/jb`) with root over SSH. Your jailbreak's own compatibility list decides which chips and OS versions qualify.
+- **The OS accepts a new USB device description from a root process** that has `com.apple.private.usbdevice.setdescription` and `platform-application`, and it can publish a `Keyboard` USB function. ipad2jb has no model-specific code, but only the device above has shown this works.
+
+If you try another device, please open an issue with the model, OS version, jailbreak and result.
+
+### Not supported yet
+
+| Setup | Why |
+| --- | --- |
+| TrollStore without a jailbreak | The TrollStore app isn't built yet. |
+| Rootful jailbreaks | The install path and saved-state path are fixed to `/var/jb`. |
+| Lightning iPads and iPhones | Nobody knows yet whether they can act as a USB keyboard. Support depends on that. |
+| iOS 14 and earlier | Below the build target. |
+
+### Targets
+
+The target can be anything that accepts a standard USB keyboard with a US English layout. The Switch 2 and macOS have been tested. On macOS, approve the device as a keyboard in Privacy & Security.
 
 ## Requirements
 
-- A jailbroken iPad or iPhone with USB-C (rootless `/var/jb`), with SSH access.
+- A supported device (see above), with SSH access.
 - A Mac with Xcode to build it.
 - A USB-C data cable to the target. Set the target's USB keyboard layout to US English.
 
-The binary needs root and the entitlements in [`ipad2jb.entitlements`](ipad2jb.entitlements) (`com.apple.private.usbdevice.setdescription`, `platform-application`). `build.sh` signs them in ad hoc.
+The binary needs root and the entitlements in [`ipad2jb.entitlements`](ipad2jb.entitlements). `build.sh` signs them in ad hoc.
 
 ## Install
 
@@ -50,8 +82,6 @@ sudo ipad2jb --turbo --caps-lock --file /var/mobile/bootstrap.bas
 ```
 
 This only types the source. Save and run it in SmileBASIC afterward.
-
-On macOS, approve the device as a keyboard in Privacy & Security, or macOS holds the keystrokes back.
 
 ## How it works
 
