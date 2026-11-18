@@ -111,6 +111,7 @@ typedef struct {
     uint8_t sent[1024][IOS2KBD_REPORT_LENGTH];
     int sent_count;
     bool opened, closed;
+    bool caps_lock;               // the host's Caps Lock LED
 } fake_keyboard;
 
 static bool fake_open(void *context, const char **failed_step) {
@@ -136,6 +137,7 @@ static ios2kbd_send_result fake_send(void *context, const uint8_t report[IOS2KBD
     return IOS2KBD_SEND_OK;
 }
 
+static bool fake_caps_lock(void *context) { return ((fake_keyboard *)context)->caps_lock; }
 static void fake_close(void *context) { ((fake_keyboard *)context)->closed = true; }
 
 static unsigned long slept_ms;
@@ -162,7 +164,7 @@ static void harness_init(harness *h) {
     snprintf(h->stock_path, sizeof(h->stock_path), "%s/state/stock.plist", mkdtemp(directory));
     h->env = (ios2kbd_env){
         .usb = { &h->usb, fake_live, fake_publish, fake_selected, fake_registered },
-        .keyboard = { &h->keyboard, fake_open, fake_host_selected, fake_send, fake_close },
+        .keyboard = { &h->keyboard, fake_open, fake_host_selected, fake_send, fake_caps_lock, fake_close },
         .stock_path = h->stock_path, .sleep_ms = fake_sleep, .say = quiet, .interrupted = &h->interrupted,
     };
     slept_ms = 0;
@@ -211,7 +213,7 @@ static void test_class_replies(void) {
     uint8_t reply[128];
     memset(reply, 0xAA, sizeof(reply));
     CHECK(ios2kbd_class_reply(0x21, 0x0B, 0, reply, sizeof(reply)) == 0, "SET_PROTOCOL is a zero-length success");
-    CHECK(ios2kbd_class_reply(0x21, 0x09, 1, reply, sizeof(reply)) == 0, "SET_REPORT (LEDs) is a zero-length success");
+    CHECK(ios2kbd_class_reply(0x21, 0x0A, 0, reply, sizeof(reply)) == 0, "SET_IDLE is a zero-length success");
     CHECK(ios2kbd_class_reply(0xA1, 0x03, 1, reply, sizeof(reply)) == 1 && reply[0] == 1, "GET_PROTOCOL answers report protocol");
     memset(reply, 0xAA, sizeof(reply));
     CHECK(ios2kbd_class_reply(0xA1, 0x01, 8, reply, sizeof(reply)) == 8, "GET_REPORT returns 8 bytes");
@@ -250,6 +252,13 @@ static void test_keyboard_description(void) {
     CHECK(CFSetGetCount(functions) == 5 && CFSetContainsValue(functions, CFSTR("IapOverUsbHid")),
           "function names across every configuration, deduplicated");
     CFRelease(functions); CFRelease(keyboard); CFRelease(stock);
+}
+
+static void test_led_report(void) {
+    CHECK(ios2kbd_is_led_report(0x21, 0x09, 0x0200, 1), "SET_REPORT of an output report sets the LEDs");
+    CHECK(!ios2kbd_is_led_report(0x21, 0x09, 0x0100, 1), "input report is not an LED report");
+    CHECK(!ios2kbd_is_led_report(0x21, 0x0B, 0x0200, 1), "SET_PROTOCOL is not an LED report");
+    CHECK(!ios2kbd_is_led_report(0x21, 0x09, 0x0200, 0), "an empty report is not an LED report");
 }
 
 // --- the run ------------------------------------------------------------------
@@ -308,6 +317,25 @@ static void test_clears_autoindent_with_mac_keys(void) {
     CHECK(count == 6 && memcmp(keys, expected, sizeof(expected)) == 0,
           "Enter, then Cmd+Shift+Left and forward Delete, then the line's own space");
     CHECK(count == 6 && mods[2] == 0x0A && mods[3] == 0, "Left arrow held with Command and Shift");
+    harness_free(&h);
+}
+
+static void test_compensates_host_caps_lock(void) {
+    harness h; harness_init(&h);
+    h.keyboard.caps_lock = true;
+    ios2kbd_outcome outcome = ios2kbd_run(&h.env, "Ab1!");
+    CHECK(outcome.typing == IOS2KBD_TYPED, "typed");
+    uint8_t keys[8], mods[8];
+    int count = 0;
+    for (int i = 0; i < h.keyboard.sent_count && count < 8; i++) {
+        if (h.keyboard.sent[i][2]) {
+            keys[count] = h.keyboard.sent[i][2];
+            mods[count++] = h.keyboard.sent[i][0];
+        }
+    }
+    const uint8_t expected_keys[] = {0x04, 0x05, 0x1E, 0x1E}, expected_mods[] = {0, 2, 0, 2};
+    CHECK(count == 4 && memcmp(keys, expected_keys, 4) == 0 && memcmp(mods, expected_mods, 4) == 0,
+          "with Caps Lock on, letters invert Shift and other keys keep it");
     harness_free(&h);
 }
 
@@ -444,8 +472,10 @@ int main(void) {
     test_keycodes();
     test_clears_autoindent();
     test_clears_autoindent_with_mac_keys();
+    test_compensates_host_caps_lock();
     test_key_hold();
     test_class_replies();
+    test_led_report();
     test_keyboard_description();
     test_types_and_restores();
     test_interrupt_during_typing();

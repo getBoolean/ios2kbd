@@ -25,17 +25,17 @@ sudo ios2kbd --file /var/mobile/bootstrap.bas
 | --- | --- |
 | `--file PATH` | Type a file (up to 1 MiB of printable ASCII and line breaks). Clears the editor's auto-indent after each Enter. |
 | `--mac` | Clear auto-indent with macOS keys. Use with `--file` when typing into a Mac. |
-| `--caps-lock` | Swap upper and lower case, for targets that type letters in reversed case. |
 | `--` | Treat everything after it as text. |
 | `--help` | Print the usage. |
 
-For SmileBASIC on the Switch 2, focus an empty program editor and run `sudo ios2kbd --caps-lock --file bootstrap.bas`. Then save and run it in SmileBASIC.
+For SmileBASIC on the Switch 2, focus an empty program editor and run `sudo ios2kbd --file bootstrap.bas`. Then save and run it in SmileBASIC.
 
 Notes:
 
 - Check the typed text before you run it.
 - On macOS, approve the device as a keyboard in Privacy & Security the first time.
 - Ctrl-C stops typing; USB is still restored.
+- If the host's Caps Lock is on, letters still come out in the right case.
 
 ## Device support
 

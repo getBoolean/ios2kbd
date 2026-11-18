@@ -271,6 +271,11 @@ static const char *restore_message(ios2kbd_restore restore) {
     return "";
 }
 
+bool ios2kbd_is_led_report(uint8_t request_type, uint8_t request, uint16_t value, uint16_t length) {
+    enum { HID_CLASS_OUT = 0x21, SET_REPORT = 0x09, OUTPUT_REPORT = 0x02 };
+    return request_type == HID_CLASS_OUT && request == SET_REPORT && (value >> 8) == OUTPUT_REPORT && length >= 1;
+}
+
 // --- typing -----------------------------------------------------------------
 
 // Offer neutral reports for `milliseconds`. A timed-out offer only means the
@@ -294,9 +299,14 @@ static bool send_key(const ios2kbd_env *env, uint8_t modifier, uint8_t usage) {
     return env->keyboard.send(env->keyboard.context, neutral_report) == IOS2KBD_SEND_OK;
 }
 
+// With the host's Caps Lock on, Shift gives a lowercase letter, so letters
+// are typed with Shift inverted. Other keys ignore Caps Lock.
 static bool press_and_release(const ios2kbd_env *env, char c) {
     uint8_t modifier, usage;
-    return ios2kbd_keycode(c, &modifier, &usage) && send_key(env, modifier, usage);
+    if (!ios2kbd_keycode(c, &modifier, &usage)) return false;
+    bool letter = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+    if (letter && env->keyboard.caps_lock(env->keyboard.context)) modifier ^= LEFT_SHIFT;
+    return send_key(env, modifier, usage);
 }
 
 static ios2kbd_typing type_text(const ios2kbd_env *env, const char *text) {
@@ -304,6 +314,8 @@ static ios2kbd_typing type_text(const ios2kbd_env *env, const char *text) {
         return *env->interrupted ? IOS2KBD_INTERRUPTED : IOS2KBD_NEVER_POLLED;
     env->say("host is reading the keyboard; typing");
     if (!hold_neutral(env, SETTLE_MS)) return IOS2KBD_HOST_LOST;
+    if (env->keyboard.caps_lock(env->keyboard.context))
+        env->say("host Caps Lock is on; inverting Shift for letters");
     for (const char *c = text; *c; c++) {
         if (*env->interrupted) return IOS2KBD_INTERRUPTED;
         if (!press_and_release(env, *c)) return IOS2KBD_HOST_LOST;

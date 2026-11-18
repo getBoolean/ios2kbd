@@ -9,8 +9,8 @@
 #include <string.h>
 #include <unistd.h>
 
-#define USAGE "usage: ios2kbd [--caps-lock] [--mac] [--] [TEXT...]\n" \
-              "       ios2kbd [--caps-lock] [--mac] --file PATH\n" \
+#define USAGE "usage: ios2kbd [--mac] [--] [TEXT...]\n" \
+              "       ios2kbd [--mac] --file PATH\n" \
               "TEXT or the file: 1-%d bytes of printable ASCII and newlines.\n"
 #define STOCK_PATH "/var/jb/var/lib/ios2kbd/stock-description.plist"
 
@@ -53,13 +53,8 @@ static bool read_file(const char *path, char *text) {
 
 int main(int argc, char **argv) {
     static char text[IOS2KBD_MAX_TEXT + 2];
-    bool caps_lock = false, mac = false;
-    while (argc > 1) {
-        if (strcmp(argv[1], "--caps-lock") == 0) caps_lock = true;
-        else if (strcmp(argv[1], "--mac") == 0) mac = true;
-        else break;
-        argc--; argv++;
-    }
+    bool mac = false;
+    while (argc > 1 && strcmp(argv[1], "--mac") == 0) { mac = true; argc--; argv++; }
     // A mistyped option must never be typed into the host as text. Text that
     // starts with "--" goes after a "--" separator.
     bool literal = argc > 1 && strcmp(argv[1], "--") == 0;
@@ -79,13 +74,6 @@ int main(int argc, char **argv) {
     if (!loaded || !ios2kbd_text_is_typable(text)) {
         fprintf(stderr, USAGE, IOS2KBD_MAX_TEXT);
         return 1;
-    }
-    // Manual case compensation; the host/editor lock state is not detected.
-    if (caps_lock) {
-        for (char *c = text; *c; c++) {
-            if (*c >= 'a' && *c <= 'z') *c = (char)(*c - 'a' + 'A');
-            else if (*c >= 'A' && *c <= 'Z') *c = (char)(*c - 'A' + 'a');
-        }
     }
     if (getuid() != 0) { fprintf(stderr, "ios2kbd: run as root: sudo ios2kbd\n"); return 1; }
 
