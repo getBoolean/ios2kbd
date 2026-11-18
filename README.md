@@ -16,7 +16,6 @@ Only one device has been tested so far:
 | --- | --- | --- | --- |
 | iPad Pro 12.9-inch (6th generation, M2, `iPad14,5`) | iPadOS 17.0 | Dopamine (rootless) | Nintendo Switch 2 (SmileBASIC), macOS, Windows |
 
-The Switch 2 and macOS were tested before keyboard mode switched to its own USB ID (see [How it works](#how-it-works)). They haven't been retested since.
 
 ### Should work, untested
 
