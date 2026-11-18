@@ -9,6 +9,7 @@
 #include <IOKit/IOKitLib.h>
 #include <dispatch/dispatch.h>
 #include <dlfcn.h>
+#include <stdatomic.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -155,6 +156,8 @@ static struct {
     uint64_t pipe;
     user_buffer reports;          // staged keyboard reports (main thread)
     user_buffer class_replies;    // class-request reply data (dispatch queue)
+    user_buffer leds;             // the host's last LED report, written by the kernel
+    atomic_bool leds_received;
     IONotificationPortRef port;
 } keyboard;
 
@@ -177,18 +180,27 @@ static io_service_t find_keyboard_function(void) {
 
 // The kernel posts each class request (SET_PROTOCOL, SET_IDLE, SET_REPORT,
 // ...) here and stalls it unless userspace completes it. The Switch 2 stops
-// talking to a keyboard whose requests stall.
+// talking to a keyboard whose requests stall. A host-to-device data stage
+// lands in the completion buffer a few milliseconds after the completion,
+// with no further notification, so the LED report (how the host tells a
+// keyboard its Caps Lock state) gets a buffer of its own, read when typing.
 static void class_request(void *refcon, IOReturn result, void **arguments, uint32_t count) {
     (void)refcon; (void)result;
     if (count < 5) return;
     const uint64_t *argument = (const uint64_t *)arguments;
     uint8_t request_type = (argument[1] >> 24) & 0xFF, request = (argument[1] >> 16) & 0xFF;
-    uint16_t length = argument[2] & 0xFFFF;
+    uint16_t value = argument[1] & 0xFFFF, length = argument[2] & 0xFFFF;
     uint64_t token = argument[4];
-    size_t reply = ios2kbd_class_reply(request_type, request, length,
-                                       (uint8_t *)(uintptr_t)keyboard.class_replies.address,
-                                       (size_t)keyboard.class_replies.size);
-    uint64_t complete[5] = { 1, reply, keyboard.class_replies.address, 0, token };
+    uint64_t address = keyboard.class_replies.address, reply;
+    if (ios2kbd_is_led_report(request_type, request, value, length)) {
+        address = keyboard.leds.address;
+        reply = 1;
+        atomic_store(&keyboard.leds_received, true);
+    } else {
+        reply = ios2kbd_class_reply(request_type, request, length, (uint8_t *)(uintptr_t)address,
+                                    (size_t)keyboard.class_replies.size);
+    }
+    uint64_t complete[5] = { 1, reply, address, 0, token };
     call(SEL_COMPLETE_CLASS_REQUEST, complete, 5, NULL, 0);
 }
 
@@ -261,7 +273,9 @@ static bool keyboard_open(void *context, const char **failed_step) {
     *failed_step = "create the interrupt-IN pipe";
     if (call(SEL_CREATE_PIPE, endpoint, 6, &keyboard.pipe, 1)) return false;
     *failed_step = "create buffers";
-    if (!create_buffer(&keyboard.reports) || !create_buffer(&keyboard.class_replies)) return false;
+    if (!create_buffer(&keyboard.reports) || !create_buffer(&keyboard.class_replies) ||
+        !create_buffer(&keyboard.leds))
+        return false;
     *failed_step = "commit";
     if (call(SEL_COMMIT, NULL, 0, NULL, 0)) return false;
     *failed_step = "serve class requests";
@@ -284,6 +298,12 @@ static ios2kbd_send_result keyboard_send(void *context, const uint8_t report[IOS
     return status == kIOReturnTimeout ? IOS2KBD_SEND_TIMEOUT : IOS2KBD_SEND_FAILED;
 }
 
+static bool keyboard_caps_lock(void *context) {
+    (void)context;
+    return atomic_load(&keyboard.leds_received) &&
+           (*(volatile uint8_t *)(uintptr_t)keyboard.leds.address & IOS2KBD_LED_CAPS_LOCK);
+}
+
 static void keyboard_close(void *context) {
     (void)context;
     if (keyboard.connection) IOServiceClose(keyboard.connection);
@@ -291,5 +311,6 @@ static void keyboard_close(void *context) {
 }
 
 void ios2kbd_iokit_keyboard(ios2kbd_keyboard *out) {
-    *out = (ios2kbd_keyboard){ NULL, keyboard_open, keyboard_host_selected, keyboard_send, keyboard_close };
+    *out = (ios2kbd_keyboard){ NULL, keyboard_open, keyboard_host_selected, keyboard_send,
+                               keyboard_caps_lock, keyboard_close };
 }

@@ -30,11 +30,17 @@ bool ios2kbd_keycode(char c, uint8_t *modifier, uint8_t *usage);
 bool ios2kbd_text_is_typable(const char *text);
 
 // Bytes to return for a class request on the keyboard interface. Host-to-device
-// requests (SET_PROTOCOL, SET_IDLE, SET_REPORT) get a zero-length success;
-// device-to-host requests get zeros, except GET_PROTOCOL which answers report
-// protocol (1). Returns the reply length (at most `capacity` and 64).
+// requests (SET_PROTOCOL, SET_IDLE) get a zero-length success; device-to-host
+// requests get zeros, except GET_PROTOCOL which answers report protocol (1).
+// Returns the reply length (at most `capacity` and 64). The LED report is
+// received separately (ios2kbd_is_led_report).
 size_t ios2kbd_class_reply(uint8_t request_type, uint8_t request, uint16_t length,
                            uint8_t *reply, size_t capacity);
+
+// True if the request is the host setting the keyboard LEDs (SET_REPORT of an
+// output report with data). Its first data byte holds the LED bits.
+bool ios2kbd_is_led_report(uint8_t request_type, uint8_t request, uint16_t value, uint16_t length);
+#define IOS2KBD_LED_CAPS_LOCK 0x02
 
 // The stock description with ConfigurationDescriptors replaced by the
 // host-selected configuration turned into Apple's single-configuration
@@ -76,6 +82,8 @@ typedef struct {
     // A host has selected a configuration containing the keyboard endpoint.
     bool (*host_selected)(void *context);
     ios2kbd_send_result (*send)(void *context, const uint8_t report[IOS2KBD_REPORT_LENGTH]);
+    // The host's Caps Lock state from its last LED report; false before one.
+    bool (*caps_lock)(void *context);
     void (*close)(void *context);
 } ios2kbd_keyboard;
 

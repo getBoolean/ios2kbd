@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: ./test.sh
+      - name: Install dpkg
+        run: brew install dpkg
+      - name: Build and package
+        run: ./package.sh "0.0.0~ci${GITHUB_RUN_NUMBER}" build/release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios2kbd
+          path: build/release/

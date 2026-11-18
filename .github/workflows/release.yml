@@ -1,0 +1,28 @@
+name: Release
+
+# Push a tag like v1.2.3 to build, package and publish a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: ./test.sh
+      - name: Install dpkg
+        run: brew install dpkg
+      - name: Build and package
+        run: ./package.sh "${GITHUB_REF_NAME#v}" build/release
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes \
+            --title "ios2kbd ${GITHUB_REF_NAME#v}" \
+            build/release/ios2kbd build/release/*.deb build/release/SHA256SUMS
