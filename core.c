@@ -18,7 +18,7 @@ enum {
     POLL_INTERVAL_MS = 100,
     SETTLE_MS = 3000,            // neutral reports before typing
     HOLD_KEY_MS = 5,             // each key stays down this long
-    HOLD_MS = 1000,              // neutral reports after typing, before restoring
+    HOLD_MS = 3000,              // neutral reports after typing, so the host catches up before restoring
     NEUTRAL_INTERVAL_MS = 30,
     RESTORE_ATTEMPTS = 4,        // the function-registration race can strand a function
     REGISTER_WAIT_MS = 20000,
@@ -319,8 +319,11 @@ static ios2kbd_typing type_text(const ios2kbd_env *env, const char *text) {
     for (const char *c = text; *c; c++) {
         if (*env->interrupted) return IOS2KBD_INTERRUPTED;
         if (!press_and_release(env, *c)) return IOS2KBD_HOST_LOST;
-        if (*c == '\n' && env->clear_autoindent) {
+        if (*c == '\n' && c[1] && env->clear_autoindent) {
             // The new line contains only the editor's inherited indentation.
+            // A final newline is left alone: nothing follows it, and if the
+            // editor has not finished that Enter yet, selecting the line
+            // would select and delete the last typed line instead.
             // Select it and forward-delete the selection; with nothing selected
             // at the end of the text, forward Delete does nothing, so empty
             // lines are never joined. Home, Shift+End works in SmileBASIC and
