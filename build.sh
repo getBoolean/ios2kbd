@@ -3,7 +3,7 @@
 # Output: build/ipad2jb, or the path given as $1.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
-out=${1:-"$here/../../build/ipad2jb"}
+out=${1:-"$here/build/ipad2jb"}
 mkdir -p "$(dirname "$out")"
 xcrun --sdk iphoneos clang -target arm64-apple-ios15.0 -std=c11 -O2 -Wall -Wextra -Werror \
     -framework IOKit -framework CoreFoundation \
