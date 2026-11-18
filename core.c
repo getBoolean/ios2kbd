@@ -31,6 +31,7 @@ enum {
 
 #define MAX_CLASS_REPLY 64
 #define LEFT_SHIFT 0x02
+#define LEFT_GUI 0x08   // Command on macOS
 
 static const uint8_t neutral_report[IOS2KBD_REPORT_LENGTH] = { 0 };
 
@@ -302,6 +303,8 @@ static ios2kbd_typing type_text(const ios2kbd_env *env, const char *text) {
     env->say("host is reading the keyboard; typing");
     if (!hold_neutral(env, SETTLE_MS)) return IOS2KBD_HOST_LOST;
     unsigned key_gap = env->turbo_typing ? 0 : env->fast_typing ? 5 : KEY_GAP_MS;
+    // Pause after Enter. These values came with file transfer and were never
+    // measured against a target.
     unsigned line_gap = (env->turbo_typing || env->fast_typing) ? 100 : 300;
     for (const char *c = text; *c; c++) {
         if (*env->interrupted) return IOS2KBD_INTERRUPTED;
@@ -309,9 +312,15 @@ static ios2kbd_typing type_text(const ios2kbd_env *env, const char *text) {
         env->sleep_ms(*c == '\n' ? line_gap : key_gap);
         if (*c == '\n' && env->clear_autoindent) {
             // The new line contains only the editor's inherited indentation.
-            // Home, Shift+End, Delete clears it without joining empty lines.
-            if (!send_key(env, 0, 0x4A) || !send_key(env, LEFT_SHIFT, 0x4D) ||
-                !send_key(env, 0, 0x4C)) return IOS2KBD_HOST_LOST;
+            // Select it and forward-delete the selection; with nothing selected
+            // at the end of the text, forward Delete does nothing, so empty
+            // lines are never joined. Home, Shift+End works in SmileBASIC and
+            // Windows/Linux editors; macOS uses Cmd+Shift+Left (Home and End
+            // only scroll there).
+            bool selected = env->mac_line_keys
+                ? send_key(env, LEFT_GUI | LEFT_SHIFT, 0x50)
+                : send_key(env, 0, 0x4A) && send_key(env, LEFT_SHIFT, 0x4D);
+            if (!selected || !send_key(env, 0, 0x4C)) return IOS2KBD_HOST_LOST;
             env->sleep_ms(key_gap);
         }
         size_t typed = (size_t)(c - text) + 1;

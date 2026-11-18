@@ -290,6 +290,27 @@ static void test_clears_autoindent(void) {
     harness_free(&h);
 }
 
+static void test_clears_autoindent_with_mac_keys(void) {
+    harness h; harness_init(&h);
+    h.env.clear_autoindent = true;
+    h.env.mac_line_keys = true;
+    ios2kbd_outcome outcome = ios2kbd_run(&h.env, "A\n B");
+    CHECK(outcome.typing == IOS2KBD_TYPED, "typed");
+    uint8_t keys[16], mods[16];
+    int count = 0;
+    for (int i = 0; i < h.keyboard.sent_count && count < 16; i++) {
+        if (h.keyboard.sent[i][2]) {
+            keys[count] = h.keyboard.sent[i][2];
+            mods[count++] = h.keyboard.sent[i][0];
+        }
+    }
+    const uint8_t expected[] = {0x04, 0x28, 0x50, 0x4C, 0x2C, 0x05};
+    CHECK(count == 6 && memcmp(keys, expected, sizeof(expected)) == 0,
+          "Enter, then Cmd+Shift+Left and forward Delete, then the line's own space");
+    CHECK(count == 6 && mods[2] == 0x0A && mods[3] == 0, "Left arrow held with Command and Shift");
+    harness_free(&h);
+}
+
 static void test_fast_timing(void) {
     harness slow, fast;
     harness_init(&slow);
@@ -443,6 +464,7 @@ static void test_leftover_is_restored_first(void) {
 int main(void) {
     test_keycodes();
     test_clears_autoindent();
+    test_clears_autoindent_with_mac_keys();
     test_fast_timing();
     test_class_replies();
     test_keyboard_description();

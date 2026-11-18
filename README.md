@@ -73,6 +73,9 @@ sudo ios2kbd --file /var/mobile/bootstrap.bas
 | `--fast` | USB bInterval 6, 10 ms key hold, 5 ms gap between characters, 100 ms after Enter. Check that the editor keeps up. |
 | `--turbo` | Experimental. bInterval 4, 5 ms key hold, no gap between characters, 100 ms after Enter. Check for dropped characters before you save or run anything. |
 | `--caps-lock` | Swaps upper and lower case before typing. Use it when the target types letters in reversed case. It does not read or change the target's Caps Lock state. |
+| `--mac` | With `--file`, clears the editor's auto-indent with macOS keys (Command+Shift+Left, then forward Delete). Without it, ios2kbd uses Home, Shift+End, Delete, which only scroll on macOS. Tested in Sublime Text. |
+| `--` | Everything after it is text, even if it starts with `--`. |
+| `--help` | Prints the usage. |
 
 The tested SmileBASIC run was:
 
@@ -81,6 +84,8 @@ sudo ios2kbd --turbo --caps-lock --file /var/mobile/bootstrap.bas
 ```
 
 This only types the source. Save and run it in SmileBASIC afterward.
+
+An option ios2kbd doesn't recognise stops it with an error instead of being typed as text.
 
 ## How it works
 

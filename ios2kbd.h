@@ -83,6 +83,7 @@ typedef struct {
     bool turbo_typing;                         // experimental shorter key hold
     bool fast_typing;                          // shorter inter-key and Enter delays
     bool clear_autoindent;                     // clear inherited spaces after Enter
+    bool mac_line_keys;                        // clear them with macOS keys (Cmd+Shift+Left)
     ios2kbd_usb usb;
     ios2kbd_keyboard keyboard;
     const char *stock_path;                      // saved stock description

@@ -9,6 +9,9 @@
 #include <string.h>
 #include <unistd.h>
 
+#define USAGE "usage: ios2kbd [--fast|--turbo] [--caps-lock] [--mac] [--] [TEXT...]\n" \
+              "       ios2kbd [--fast|--turbo] [--caps-lock] [--mac] --file PATH\n" \
+              "TEXT or the file: 1-%d bytes of printable ASCII and newlines.\n"
 #define STOCK_PATH "/var/jb/var/lib/ios2kbd/stock-description.plist"
 
 static volatile sig_atomic_t interrupted = 0;
@@ -50,19 +53,33 @@ static bool read_file(const char *path, char *text) {
 
 int main(int argc, char **argv) {
     static char text[IOS2KBD_MAX_TEXT + 2];
-    bool caps_lock = false, fast = false, turbo = false;
+    bool caps_lock = false, fast = false, turbo = false, mac = false;
     while (argc > 1) {
         if (strcmp(argv[1], "--caps-lock") == 0) caps_lock = true;
+        else if (strcmp(argv[1], "--mac") == 0) mac = true;
         else if (strcmp(argv[1], "--fast") == 0) fast = true;
         else if (strcmp(argv[1], "--turbo") == 0) { fast = true; turbo = true; }
         else break;
         argc--; argv++;
     }
-    bool file_mode = argc > 1 && strcmp(argv[1], "--file") == 0;
+    // A mistyped option must never be typed into the host as text. Text that
+    // starts with "--" goes after a "--" separator.
+    bool literal = argc > 1 && strcmp(argv[1], "--") == 0;
+    if (literal) { argc--; argv++; }
+    if (!literal && argc > 1 && (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0)) {
+        printf(USAGE, IOS2KBD_MAX_TEXT);
+        return 0;
+    }
+    bool file_mode = !literal && argc > 1 && strcmp(argv[1], "--file") == 0;
+    if (!literal && !file_mode && argc > 1 && strncmp(argv[1], "--", 2) == 0) {
+        fprintf(stderr, "ios2kbd: unknown option %s\n", argv[1]);
+        fprintf(stderr, USAGE, IOS2KBD_MAX_TEXT);
+        return 1;
+    }
     bool loaded = file_mode ? argc == 3 && read_file(argv[2], text)
                             : join_arguments(argc, argv, text, sizeof(text));
     if (!loaded || !ios2kbd_text_is_typable(text)) {
-        fprintf(stderr, "ios2kbd: use [--fast|--turbo] [--caps-lock] TEXT or --file PATH; expected 1-%d printable ASCII bytes and newlines\n", IOS2KBD_MAX_TEXT);
+        fprintf(stderr, USAGE, IOS2KBD_MAX_TEXT);
         return 1;
     }
     // Manual case compensation; the host/editor lock state is not detected.
@@ -82,7 +99,7 @@ int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
 
     ios2kbd_env env = {
-        .turbo_typing = turbo, .fast_typing = fast, .clear_autoindent = file_mode,
+        .turbo_typing = turbo, .fast_typing = fast, .clear_autoindent = file_mode, .mac_line_keys = mac,
         .stock_path = STOCK_PATH, .sleep_ms = sleep_ms, .say = say,
         .interrupted = &interrupted,
     };
