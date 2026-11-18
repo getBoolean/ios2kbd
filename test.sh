@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build and run ipad2jb's host tests (macOS): core.c against fake devices,
+# Build and run ios2kbd's host tests (macOS): core.c against fake devices,
 # with address and undefined-behavior sanitizers.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)

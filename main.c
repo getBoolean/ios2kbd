@@ -1,6 +1,6 @@
-// ipad2jb command line:  sudo ipad2jb [TEXT...]
-// TEXT defaults to "ipad2jb"; --file PATH reads ASCII text from a separate file.
-// Needs root and the entitlements in ipad2jb.entitlements.
+// ios2kbd command line:  sudo ios2kbd [TEXT...]
+// TEXT defaults to "ios2kbd"; --file PATH reads ASCII text from a separate file.
+// Needs root and the entitlements in ios2kbd.entitlements.
 
 #include "iokit.h"
 
@@ -9,16 +9,16 @@
 #include <string.h>
 #include <unistd.h>
 
-#define STOCK_PATH "/var/jb/var/lib/ipad2jb/stock-description.plist"
+#define STOCK_PATH "/var/jb/var/lib/ios2kbd/stock-description.plist"
 
 static volatile sig_atomic_t interrupted = 0;
 static void on_signal(int signal_number) { (void)signal_number; interrupted = 1; }
 
-static void say(const char *message) { printf("ipad2jb: %s\n", message); fflush(stdout); }
+static void say(const char *message) { printf("ios2kbd: %s\n", message); fflush(stdout); }
 static void sleep_ms(unsigned milliseconds) { usleep(milliseconds * 1000); }
 
 static bool join_arguments(int argc, char **argv, char *text, size_t capacity) {
-    if (argc < 2) { snprintf(text, capacity, "ipad2jb"); return true; }
+    if (argc < 2) { snprintf(text, capacity, "ios2kbd"); return true; }
     text[0] = '\0';
     for (int i = 1; i < argc; i++) {
         if (strlen(text) + strlen(argv[i]) + 2 > capacity) return false;
@@ -31,8 +31,8 @@ static bool join_arguments(int argc, char **argv, char *text, size_t capacity) {
 static bool read_file(const char *path, char *text) {
     FILE *file = fopen(path, "rb");
     if (!file) { perror(path); return false; }
-    size_t count = fread(text, 1, IPAD2JB_MAX_TEXT + 1, file);
-    bool ok = !ferror(file) && count > 0 && count <= IPAD2JB_MAX_TEXT &&
+    size_t count = fread(text, 1, IOS2KBD_MAX_TEXT + 1, file);
+    bool ok = !ferror(file) && count > 0 && count <= IOS2KBD_MAX_TEXT &&
               memchr(text, 0, count) == NULL;
     fclose(file);
     if (!ok) return false;
@@ -49,7 +49,7 @@ static bool read_file(const char *path, char *text) {
 }
 
 int main(int argc, char **argv) {
-    static char text[IPAD2JB_MAX_TEXT + 2];
+    static char text[IOS2KBD_MAX_TEXT + 2];
     bool caps_lock = false, fast = false, turbo = false;
     while (argc > 1) {
         if (strcmp(argv[1], "--caps-lock") == 0) caps_lock = true;
@@ -61,8 +61,8 @@ int main(int argc, char **argv) {
     bool file_mode = argc > 1 && strcmp(argv[1], "--file") == 0;
     bool loaded = file_mode ? argc == 3 && read_file(argv[2], text)
                             : join_arguments(argc, argv, text, sizeof(text));
-    if (!loaded || !ipad2jb_text_is_typable(text)) {
-        fprintf(stderr, "ipad2jb: use [--fast|--turbo] [--caps-lock] TEXT or --file PATH; expected 1-%d printable ASCII bytes and newlines\n", IPAD2JB_MAX_TEXT);
+    if (!loaded || !ios2kbd_text_is_typable(text)) {
+        fprintf(stderr, "ios2kbd: use [--fast|--turbo] [--caps-lock] TEXT or --file PATH; expected 1-%d printable ASCII bytes and newlines\n", IOS2KBD_MAX_TEXT);
         return 1;
     }
     // Manual case compensation; the host/editor lock state is not detected.
@@ -72,7 +72,7 @@ int main(int argc, char **argv) {
             else if (*c >= 'A' && *c <= 'Z') *c = (char)(*c - 'A' + 'a');
         }
     }
-    if (getuid() != 0) { fprintf(stderr, "ipad2jb: run as root: sudo ipad2jb\n"); return 1; }
+    if (getuid() != 0) { fprintf(stderr, "ios2kbd: run as root: sudo ios2kbd\n"); return 1; }
 
     // Interrupts end the typing early but never skip the restore. A closed
     // terminal or SSH session must not kill the process with SIGPIPE either.
@@ -81,16 +81,16 @@ int main(int argc, char **argv) {
     signal(SIGHUP, on_signal);
     signal(SIGPIPE, SIG_IGN);
 
-    ipad2jb_env env = {
+    ios2kbd_env env = {
         .turbo_typing = turbo, .fast_typing = fast, .clear_autoindent = file_mode,
         .stock_path = STOCK_PATH, .sleep_ms = sleep_ms, .say = say,
         .interrupted = &interrupted,
     };
-    if (!ipad2jb_iokit_usb(&env.usb)) { say("USB device controller unavailable"); return 1; }
-    ipad2jb_iokit_keyboard(&env.keyboard, turbo ? 4 : fast ? 6 : 10);
+    if (!ios2kbd_iokit_usb(&env.usb)) { say("USB device controller unavailable"); return 1; }
+    ios2kbd_iokit_keyboard(&env.keyboard, turbo ? 4 : fast ? 6 : 10);
 
-    ipad2jb_outcome outcome = ipad2jb_run(&env, text);
-    if (outcome.typing == IPAD2JB_TYPED) printf("ipad2jb: typed %zu bytes\n", strlen(text));
-    bool restored = outcome.restore == IPAD2JB_RESTORED || outcome.restore == IPAD2JB_RESTORED_NO_HOST;
-    return outcome.typing == IPAD2JB_TYPED && restored ? 0 : 1;
+    ios2kbd_outcome outcome = ios2kbd_run(&env, text);
+    if (outcome.typing == IOS2KBD_TYPED) printf("ios2kbd: typed %zu bytes\n", strlen(text));
+    bool restored = outcome.restore == IOS2KBD_RESTORED || outcome.restore == IOS2KBD_RESTORED_NO_HOST;
+    return outcome.typing == IOS2KBD_TYPED && restored ? 0 : 1;
 }

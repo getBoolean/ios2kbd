@@ -1,7 +1,7 @@
-// Host tests for ipad2jb's core: pure helpers, and the full run driven through
+// Host tests for ios2kbd's core: pure helpers, and the full run driven through
 // fake USB controller and keyboard implementations. Run with ../test.sh.
 
-#include "../ipad2jb.h"
+#include "../ios2kbd.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -84,7 +84,7 @@ static bool fake_publish(void *context, CFDictionaryRef description) {
     CFRelease(usb->live);
     usb->live = CFDictionaryCreateMutableCopy(NULL, 0, description);
     usb->polls = 0;
-    if (!ipad2jb_is_keyboard_description(description)) {
+    if (!ios2kbd_is_keyboard_description(description)) {
         usb->stock_publishes++;
         usb->selected = usb->selected_after_restore;
     }
@@ -107,7 +107,7 @@ typedef struct {
     int fail_send_at;             // this send fails (host gone); -1 for never
     int interrupt_at_send;        // the signal arrives during this send; -1 for never
     volatile sig_atomic_t *interrupted;
-    uint8_t sent[1024][IPAD2JB_REPORT_LENGTH];
+    uint8_t sent[1024][IOS2KBD_REPORT_LENGTH];
     int sent_count;
     bool opened, closed;
 } fake_keyboard;
@@ -124,15 +124,15 @@ static bool fake_host_selected(void *context) {
     return keyboard->host_selected_calls++ >= keyboard->host_selected_after;
 }
 
-static ipad2jb_send_result fake_send(void *context, const uint8_t report[IPAD2JB_REPORT_LENGTH]) {
+static ios2kbd_send_result fake_send(void *context, const uint8_t report[IOS2KBD_REPORT_LENGTH]) {
     fake_keyboard *keyboard = context;
     int index = keyboard->sent_count;
-    if (index < 1024) memcpy(keyboard->sent[index], report, IPAD2JB_REPORT_LENGTH);
+    if (index < 1024) memcpy(keyboard->sent[index], report, IOS2KBD_REPORT_LENGTH);
     keyboard->sent_count++;
     if (index == keyboard->interrupt_at_send) *keyboard->interrupted = 1;
-    if (index < keyboard->timeouts_first) return IPAD2JB_SEND_TIMEOUT;
-    if (index == keyboard->fail_send_at) return IPAD2JB_SEND_FAILED;
-    return IPAD2JB_SEND_OK;
+    if (index < keyboard->timeouts_first) return IOS2KBD_SEND_TIMEOUT;
+    if (index == keyboard->fail_send_at) return IOS2KBD_SEND_FAILED;
+    return IOS2KBD_SEND_OK;
 }
 
 static void fake_close(void *context) { ((fake_keyboard *)context)->closed = true; }
@@ -146,7 +146,7 @@ typedef struct {
     fake_keyboard keyboard;
     volatile sig_atomic_t interrupted;
     char stock_path[256];
-    ipad2jb_env env;
+    ios2kbd_env env;
 } harness;
 
 static void harness_init(harness *h) {
@@ -157,9 +157,9 @@ static void harness_init(harness *h) {
     h->keyboard.fail_send_at = -1;
     h->keyboard.interrupt_at_send = -1;
     h->keyboard.interrupted = &h->interrupted;
-    char directory[] = "/tmp/ipad2jb-test-XXXXXX";
+    char directory[] = "/tmp/ios2kbd-test-XXXXXX";
     snprintf(h->stock_path, sizeof(h->stock_path), "%s/state/stock.plist", mkdtemp(directory));
-    h->env = (ipad2jb_env){
+    h->env = (ios2kbd_env){
         .usb = { &h->usb, fake_live, fake_publish, fake_selected, fake_registered },
         .keyboard = { &h->keyboard, fake_open, fake_host_selected, fake_send, fake_close },
         .stock_path = h->stock_path, .sleep_ms = fake_sleep, .say = quiet, .interrupted = &h->interrupted,
@@ -191,39 +191,39 @@ static bool file_exists(const char *path) { return access(path, F_OK) == 0; }
 
 static void test_keycodes(void) {
     uint8_t modifier, usage;
-    CHECK(ipad2jb_keycode('a', &modifier, &usage) && usage == 0x04 && modifier == 0, "a");
-    CHECK(ipad2jb_keycode('z', &modifier, &usage) && usage == 0x1D, "z");
-    CHECK(ipad2jb_keycode('J', &modifier, &usage) && usage == 0x0D && modifier == 0x02, "J with shift");
-    CHECK(ipad2jb_keycode('1', &modifier, &usage) && usage == 0x1E, "1");
-    CHECK(ipad2jb_keycode('0', &modifier, &usage) && usage == 0x27, "0");
-    CHECK(ipad2jb_keycode(' ', &modifier, &usage) && usage == 0x2C, "space");
-    CHECK(ipad2jb_keycode('-', &modifier, &usage) && usage == 0x2D && modifier == 0, "minus");
-    CHECK(ipad2jb_keycode('"', &modifier, &usage) && usage == 0x34 && modifier == 2, "quote");
-    CHECK(ipad2jb_keycode('\n', &modifier, &usage) && usage == 0x28, "newline");
+    CHECK(ios2kbd_keycode('a', &modifier, &usage) && usage == 0x04 && modifier == 0, "a");
+    CHECK(ios2kbd_keycode('z', &modifier, &usage) && usage == 0x1D, "z");
+    CHECK(ios2kbd_keycode('J', &modifier, &usage) && usage == 0x0D && modifier == 0x02, "J with shift");
+    CHECK(ios2kbd_keycode('1', &modifier, &usage) && usage == 0x1E, "1");
+    CHECK(ios2kbd_keycode('0', &modifier, &usage) && usage == 0x27, "0");
+    CHECK(ios2kbd_keycode(' ', &modifier, &usage) && usage == 0x2C, "space");
+    CHECK(ios2kbd_keycode('-', &modifier, &usage) && usage == 0x2D && modifier == 0, "minus");
+    CHECK(ios2kbd_keycode('"', &modifier, &usage) && usage == 0x34 && modifier == 2, "quote");
+    CHECK(ios2kbd_keycode('\n', &modifier, &usage) && usage == 0x28, "newline");
     for (int c = 32; c <= 126; c++)
-        CHECK(ipad2jb_keycode((char)c, &modifier, &usage), "printable ASCII %d", c);
-    CHECK(ipad2jb_text_is_typable("ipad2jb") && ipad2jb_text_is_typable("Hello World 42"), "typable");
-    CHECK(!ipad2jb_text_is_typable("") && !ipad2jb_text_is_typable("a\b"), "untypable");
+        CHECK(ios2kbd_keycode((char)c, &modifier, &usage), "printable ASCII %d", c);
+    CHECK(ios2kbd_text_is_typable("ios2kbd") && ios2kbd_text_is_typable("Hello World 42"), "typable");
+    CHECK(!ios2kbd_text_is_typable("") && !ios2kbd_text_is_typable("a\b"), "untypable");
 }
 
 static void test_class_replies(void) {
     uint8_t reply[128];
     memset(reply, 0xAA, sizeof(reply));
-    CHECK(ipad2jb_class_reply(0x21, 0x0B, 0, reply, sizeof(reply)) == 0, "SET_PROTOCOL is a zero-length success");
-    CHECK(ipad2jb_class_reply(0x21, 0x09, 1, reply, sizeof(reply)) == 0, "SET_REPORT (LEDs) is a zero-length success");
-    CHECK(ipad2jb_class_reply(0xA1, 0x03, 1, reply, sizeof(reply)) == 1 && reply[0] == 1, "GET_PROTOCOL answers report protocol");
+    CHECK(ios2kbd_class_reply(0x21, 0x0B, 0, reply, sizeof(reply)) == 0, "SET_PROTOCOL is a zero-length success");
+    CHECK(ios2kbd_class_reply(0x21, 0x09, 1, reply, sizeof(reply)) == 0, "SET_REPORT (LEDs) is a zero-length success");
+    CHECK(ios2kbd_class_reply(0xA1, 0x03, 1, reply, sizeof(reply)) == 1 && reply[0] == 1, "GET_PROTOCOL answers report protocol");
     memset(reply, 0xAA, sizeof(reply));
-    CHECK(ipad2jb_class_reply(0xA1, 0x01, 8, reply, sizeof(reply)) == 8, "GET_REPORT returns 8 bytes");
+    CHECK(ios2kbd_class_reply(0xA1, 0x01, 8, reply, sizeof(reply)) == 8, "GET_REPORT returns 8 bytes");
     bool zeros = true;
     for (int i = 0; i < 8; i++) zeros = zeros && reply[i] == 0;
     CHECK(zeros && reply[8] == 0xAA, "GET_REPORT is all keys up and writes nothing past its length");
-    CHECK(ipad2jb_class_reply(0xA1, 0x01, 500, reply, sizeof(reply)) == 64, "replies are capped at 64 bytes");
-    CHECK(ipad2jb_class_reply(0xA1, 0x01, 500, reply, 16) == 16, "replies are capped at the buffer size");
+    CHECK(ios2kbd_class_reply(0xA1, 0x01, 500, reply, sizeof(reply)) == 64, "replies are capped at 64 bytes");
+    CHECK(ios2kbd_class_reply(0xA1, 0x01, 500, reply, 16) == 16, "replies are capped at the buffer size");
 }
 
 static void test_keyboard_description(void) {
     CFMutableDictionaryRef stock = stock_description();
-    CFMutableDictionaryRef keyboard = ipad2jb_keyboard_description(stock, 3);
+    CFMutableDictionaryRef keyboard = ios2kbd_keyboard_description(stock, 3);
     CHECK(keyboard != NULL, "configuration 3 builds");
     CFArrayRef configs = CFDictionaryGetValue(keyboard, CFSTR("ConfigurationDescriptors"));
     CHECK(CFArrayGetCount(configs) == 1, "exactly one configuration");
@@ -237,10 +237,10 @@ static void test_keyboard_description(void) {
     CHECK(CFDictionaryContainsKey(only, CFSTR("MaxPower")) && CFDictionaryContainsKey(only, CFSTR("Attributes")),
           "power and attributes kept from the selected configuration");
     CHECK(CFDictionaryContainsKey(keyboard, CFSTR("vendorID")), "device fields kept");
-    CHECK(ipad2jb_is_keyboard_description(keyboard) && !ipad2jb_is_keyboard_description(stock), "detected");
-    CHECK(ipad2jb_keyboard_description(stock, 0) == NULL && ipad2jb_keyboard_description(stock, 4) == NULL,
+    CHECK(ios2kbd_is_keyboard_description(keyboard) && !ios2kbd_is_keyboard_description(stock), "detected");
+    CHECK(ios2kbd_keyboard_description(stock, 0) == NULL && ios2kbd_keyboard_description(stock, 4) == NULL,
           "out-of-range configuration refused");
-    CFSetRef functions = ipad2jb_function_names(stock);
+    CFSetRef functions = ios2kbd_function_names(stock);
     CHECK(CFSetGetCount(functions) == 5 && CFSetContainsValue(functions, CFSTR("IapOverUsbHid")),
           "function names across every configuration, deduplicated");
     CFRelease(functions); CFRelease(keyboard); CFRelease(stock);
@@ -251,13 +251,13 @@ static void test_keyboard_description(void) {
 static void test_types_and_restores(void) {
     harness h; harness_init(&h);
     h.keyboard.timeouts_first = 3;   // the host takes a moment to start polling
-    ipad2jb_outcome outcome = ipad2jb_run(&h.env, "Hi 2");
+    ios2kbd_outcome outcome = ios2kbd_run(&h.env, "Hi 2");
     char typed[64]; typed_text(&h.keyboard, typed, sizeof(typed));
-    CHECK(outcome.typing == IPAD2JB_TYPED, "typed (got %d)", outcome.typing);
-    CHECK(outcome.restore == IPAD2JB_RESTORED, "restored (got %d)", outcome.restore);
+    CHECK(outcome.typing == IOS2KBD_TYPED, "typed (got %d)", outcome.typing);
+    CHECK(outcome.restore == IOS2KBD_RESTORED, "restored (got %d)", outcome.restore);
     CHECK(strcmp(typed, "Hi 2") == 0, "typed text was '%s'", typed);
     CHECK(h.usb.publishes == 2 && h.usb.stock_publishes == 1, "keyboard then stock published once each");
-    CHECK(!ipad2jb_is_keyboard_description(h.usb.live), "stock is live again");
+    CHECK(!ios2kbd_is_keyboard_description(h.usb.live), "stock is live again");
     CHECK(!file_exists(h.stock_path), "saved stock removed after restoring");
     CHECK(h.keyboard.closed, "keyboard closed");
     harness_free(&h);
@@ -266,8 +266,8 @@ static void test_types_and_restores(void) {
 static void test_clears_autoindent(void) {
     harness h; harness_init(&h);
     h.env.clear_autoindent = true;
-    ipad2jb_outcome outcome = ipad2jb_run(&h.env, "A\n B");
-    CHECK(outcome.typing == IPAD2JB_TYPED && outcome.restore == IPAD2JB_RESTORED,
+    ios2kbd_outcome outcome = ios2kbd_run(&h.env, "A\n B");
+    CHECK(outcome.typing == IOS2KBD_TYPED && outcome.restore == IOS2KBD_RESTORED,
           "multiline file types and restores");
     uint8_t keys[16], mods[16];
     int count = 0;
@@ -288,30 +288,30 @@ static void test_fast_timing(void) {
     harness slow, fast;
     harness_init(&slow);
     slow.env.clear_autoindent = true;
-    ipad2jb_outcome a = ipad2jb_run(&slow.env, "A\n B");
+    ios2kbd_outcome a = ios2kbd_run(&slow.env, "A\n B");
     unsigned long slow_ms = slept_ms;
     harness_init(&fast);
     fast.env.clear_autoindent = true;
     fast.env.fast_typing = true;
-    ipad2jb_outcome b = ipad2jb_run(&fast.env, "A\n B");
-    CHECK(a.typing == IPAD2JB_TYPED && b.typing == IPAD2JB_TYPED &&
-          b.restore == IPAD2JB_RESTORED, "fast run types and restores");
+    ios2kbd_outcome b = ios2kbd_run(&fast.env, "A\n B");
+    CHECK(a.typing == IOS2KBD_TYPED && b.typing == IOS2KBD_TYPED &&
+          b.restore == IOS2KBD_RESTORED, "fast run types and restores");
     CHECK(slow_ms == slept_ms + 230, "fast mode reduces character, Enter and cleanup gaps");
     CHECK(slow.keyboard.sent_count == fast.keyboard.sent_count &&
           memcmp(slow.keyboard.sent, fast.keyboard.sent,
-                 slow.keyboard.sent_count * IPAD2JB_REPORT_LENGTH) == 0,
+                 slow.keyboard.sent_count * IOS2KBD_REPORT_LENGTH) == 0,
           "fast mode sends identical keyboard reports");
     unsigned long fast_ms = slept_ms;
     harness turbo; harness_init(&turbo);
     turbo.env.clear_autoindent = true;
     turbo.env.turbo_typing = true;
-    ipad2jb_outcome t = ipad2jb_run(&turbo.env, "A\n B");
-    CHECK(t.typing == IPAD2JB_TYPED && t.restore == IPAD2JB_RESTORED,
+    ios2kbd_outcome t = ios2kbd_run(&turbo.env, "A\n B");
+    CHECK(t.typing == IOS2KBD_TYPED && t.restore == IOS2KBD_RESTORED,
           "turbo run types and restores");
     CHECK(fast_ms == slept_ms + 55, "turbo reduces key hold and gaps but retains Enter delay");
     CHECK(fast.keyboard.sent_count == turbo.keyboard.sent_count &&
           memcmp(fast.keyboard.sent, turbo.keyboard.sent,
-                 fast.keyboard.sent_count * IPAD2JB_REPORT_LENGTH) == 0,
+                 fast.keyboard.sent_count * IOS2KBD_REPORT_LENGTH) == 0,
           "turbo sends identical keyboard reports");
     harness_free(&slow); harness_free(&fast); harness_free(&turbo);
 }
@@ -319,62 +319,62 @@ static void test_fast_timing(void) {
 static void test_interrupt_during_typing(void) {
     harness h; harness_init(&h);
     h.keyboard.interrupt_at_send = 110;  // after the settle period, mid-text
-    ipad2jb_outcome outcome = ipad2jb_run(&h.env, "abcdefghij");
-    CHECK(outcome.typing == IPAD2JB_INTERRUPTED, "interrupted is not reported as typed (got %d)", outcome.typing);
-    CHECK(outcome.restore == IPAD2JB_RESTORED, "still restored (got %d)", outcome.restore);
+    ios2kbd_outcome outcome = ios2kbd_run(&h.env, "abcdefghij");
+    CHECK(outcome.typing == IOS2KBD_INTERRUPTED, "interrupted is not reported as typed (got %d)", outcome.typing);
+    CHECK(outcome.restore == IOS2KBD_RESTORED, "still restored (got %d)", outcome.restore);
     harness_free(&h);
 }
 
 static void test_no_host(void) {
     harness h; harness_init(&h);
     h.usb.selected = 0;
-    ipad2jb_outcome outcome = ipad2jb_run(&h.env, "ipad2jb");
-    CHECK(outcome.typing == IPAD2JB_NO_HOST && outcome.restore == IPAD2JB_NOTHING_TO_RESTORE, "no host");
+    ios2kbd_outcome outcome = ios2kbd_run(&h.env, "ios2kbd");
+    CHECK(outcome.typing == IOS2KBD_NO_HOST && outcome.restore == IOS2KBD_NOTHING_TO_RESTORE, "no host");
     CHECK(h.usb.publishes == 0 && !file_exists(h.stock_path), "nothing published or saved");
     harness_free(&h);
 }
 
 static void test_leftover_keyboard_description(void) {
     harness h; harness_init(&h);
-    CFMutableDictionaryRef keyboard = ipad2jb_keyboard_description(h.usb.live, 1);
+    CFMutableDictionaryRef keyboard = ios2kbd_keyboard_description(h.usb.live, 1);
     CFRelease(h.usb.live); h.usb.live = keyboard;
-    ipad2jb_outcome outcome = ipad2jb_run(&h.env, "ipad2jb");
-    CHECK(outcome.typing == IPAD2JB_NOT_STOCK && h.usb.publishes == 0, "refuses to save a keyboard description as stock");
+    ios2kbd_outcome outcome = ios2kbd_run(&h.env, "ios2kbd");
+    CHECK(outcome.typing == IOS2KBD_NOT_STOCK && h.usb.publishes == 0, "refuses to save a keyboard description as stock");
     harness_free(&h);
 }
 
 static void test_never_polled(void) {
     harness h; harness_init(&h);
     h.keyboard.host_selected_after = 1 << 30;
-    ipad2jb_outcome outcome = ipad2jb_run(&h.env, "ipad2jb");
-    CHECK(outcome.typing == IPAD2JB_NEVER_POLLED, "never polled (got %d)", outcome.typing);
-    CHECK(outcome.restore == IPAD2JB_RESTORED, "restored anyway");
+    ios2kbd_outcome outcome = ios2kbd_run(&h.env, "ios2kbd");
+    CHECK(outcome.typing == IOS2KBD_NEVER_POLLED, "never polled (got %d)", outcome.typing);
+    CHECK(outcome.restore == IOS2KBD_RESTORED, "restored anyway");
     harness_free(&h);
 }
 
 static void test_host_lost_mid_typing(void) {
     harness h; harness_init(&h);
     h.keyboard.fail_send_at = 105;
-    ipad2jb_outcome outcome = ipad2jb_run(&h.env, "abcdefghij");
-    CHECK(outcome.typing == IPAD2JB_HOST_LOST, "host lost (got %d)", outcome.typing);
-    CHECK(outcome.restore == IPAD2JB_RESTORED, "restored anyway");
+    ios2kbd_outcome outcome = ios2kbd_run(&h.env, "abcdefghij");
+    CHECK(outcome.typing == IOS2KBD_HOST_LOST, "host lost (got %d)", outcome.typing);
+    CHECK(outcome.restore == IOS2KBD_RESTORED, "restored anyway");
     harness_free(&h);
 }
 
 static void test_setup_failure_restores(void) {
     harness h; harness_init(&h);
     h.keyboard.refuse_open = true;
-    ipad2jb_outcome outcome = ipad2jb_run(&h.env, "ipad2jb");
-    CHECK(outcome.typing == IPAD2JB_SETUP_FAILED && outcome.restore == IPAD2JB_RESTORED, "setup failure restores");
+    ios2kbd_outcome outcome = ios2kbd_run(&h.env, "ios2kbd");
+    CHECK(outcome.typing == IOS2KBD_SETUP_FAILED && outcome.restore == IOS2KBD_RESTORED, "setup failure restores");
     harness_free(&h);
 }
 
 static void test_restore_without_host_is_quick(void) {
     harness h; harness_init(&h);
     h.usb.selected_after_restore = 0;   // cable pulled before the restore
-    ipad2jb_outcome outcome = ipad2jb_run(&h.env, "ipad2jb");
-    CHECK(outcome.typing == IPAD2JB_TYPED, "typed");
-    CHECK(outcome.restore == IPAD2JB_RESTORED_NO_HOST, "restored without a host (got %d)", outcome.restore);
+    ios2kbd_outcome outcome = ios2kbd_run(&h.env, "ios2kbd");
+    CHECK(outcome.typing == IOS2KBD_TYPED, "typed");
+    CHECK(outcome.restore == IOS2KBD_RESTORED_NO_HOST, "restored without a host (got %d)", outcome.restore);
     CHECK(h.usb.stock_publishes == 1, "stock published once, not retried (got %d)", h.usb.stock_publishes);
     CHECK(!file_exists(h.stock_path), "saved stock removed once the functions are back");
     harness_free(&h);
@@ -383,8 +383,8 @@ static void test_restore_without_host_is_quick(void) {
 static void test_restore_retries_stranded_functions(void) {
     harness h; harness_init(&h);
     h.usb.register_after_polls = 1 << 30;   // functions never register
-    ipad2jb_outcome outcome = ipad2jb_run(&h.env, "ipad2jb");
-    CHECK(outcome.restore == IPAD2JB_RESTORE_FAILED, "restore failure reported (got %d)", outcome.restore);
+    ios2kbd_outcome outcome = ios2kbd_run(&h.env, "ios2kbd");
+    CHECK(outcome.restore == IOS2KBD_RESTORE_FAILED, "restore failure reported (got %d)", outcome.restore);
     CHECK(h.usb.stock_publishes == 4, "stock republished 4 times (got %d)", h.usb.stock_publishes);
     CHECK(file_exists(h.stock_path), "saved stock kept for the next run");
     harness_free(&h);
@@ -394,14 +394,14 @@ static void test_leftover_is_restored_first(void) {
     harness h; harness_init(&h);
     // A previous run saved the stock description and died with the keyboard published.
     h.usb.register_after_polls = 1 << 30;
-    ipad2jb_run(&h.env, "ipad2jb");
+    ios2kbd_run(&h.env, "ios2kbd");
     CHECK(file_exists(h.stock_path), "precondition: leftover saved stock");
     h.usb.register_after_polls = 0;
     h.usb.stock_publishes = 0;
     h.keyboard.sent_count = 0;
-    ipad2jb_outcome outcome = ipad2jb_run(&h.env, "ab");
+    ios2kbd_outcome outcome = ios2kbd_run(&h.env, "ab");
     char typed[16]; typed_text(&h.keyboard, typed, sizeof(typed));
-    CHECK(outcome.typing == IPAD2JB_TYPED && strcmp(typed, "ab") == 0, "typed after restoring the leftover");
+    CHECK(outcome.typing == IOS2KBD_TYPED && strcmp(typed, "ab") == 0, "typed after restoring the leftover");
     CHECK(h.usb.stock_publishes == 2, "leftover restored, then restored again after typing (got %d)",
           h.usb.stock_publishes);
     harness_free(&h);
@@ -424,6 +424,6 @@ int main(void) {
     test_restore_retries_stranded_functions();
     test_leftover_is_restored_first();
     if (failures) { fprintf(stderr, "%d check(s) failed\n", failures); return 1; }
-    printf("ipad2jb core tests passed\n");
+    printf("ios2kbd core tests passed\n");
     return 0;
 }

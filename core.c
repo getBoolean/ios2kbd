@@ -1,7 +1,7 @@
-// The ipad2jb run and its pure helpers. No IOKit: the device is reached only
-// through ipad2jb_env, so tests/test_core.c can drive every path with fakes.
+// The ios2kbd run and its pure helpers. No IOKit: the device is reached only
+// through ios2kbd_env, so tests/test_core.c can drive every path with fakes.
 
-#include "ipad2jb.h"
+#include "ios2kbd.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -30,11 +30,11 @@ enum {
 #define MAX_CLASS_REPLY 64
 #define LEFT_SHIFT 0x02
 
-static const uint8_t neutral_report[IPAD2JB_REPORT_LENGTH] = { 0 };
+static const uint8_t neutral_report[IOS2KBD_REPORT_LENGTH] = { 0 };
 
 // --- pure helpers -----------------------------------------------------------
 
-bool ipad2jb_keycode(char c, uint8_t *modifier, uint8_t *usage) {
+bool ios2kbd_keycode(char c, uint8_t *modifier, uint8_t *usage) {
     *modifier = 0;
     if (c >= 'a' && c <= 'z') *usage = (uint8_t)(0x04 + (c - 'a'));
     else if (c >= 'A' && c <= 'Z') { *usage = (uint8_t)(0x04 + (c - 'A')); *modifier = LEFT_SHIFT; }
@@ -58,15 +58,15 @@ bool ipad2jb_keycode(char c, uint8_t *modifier, uint8_t *usage) {
     return true;
 }
 
-bool ipad2jb_text_is_typable(const char *text) {
-    if (!text || !*text || strlen(text) > IPAD2JB_MAX_TEXT) return false;
+bool ios2kbd_text_is_typable(const char *text) {
+    if (!text || !*text || strlen(text) > IOS2KBD_MAX_TEXT) return false;
     uint8_t modifier, usage;
     for (const char *c = text; *c; c++)
-        if (!ipad2jb_keycode(*c, &modifier, &usage)) return false;
+        if (!ios2kbd_keycode(*c, &modifier, &usage)) return false;
     return true;
 }
 
-size_t ipad2jb_class_reply(uint8_t request_type, uint8_t request, uint16_t length,
+size_t ios2kbd_class_reply(uint8_t request_type, uint8_t request, uint16_t length,
                            uint8_t *reply, size_t capacity) {
     enum { DEVICE_TO_HOST = 0x80, HID_CLASS_IN = 0xA1, GET_PROTOCOL = 0x03, REPORT_PROTOCOL = 1 };
     if (!(request_type & DEVICE_TO_HOST) || length == 0 || !reply) return 0;
@@ -89,7 +89,7 @@ static CFArrayRef interface_names(CFTypeRef configuration) {
     return value && CFGetTypeID(value) == CFArrayGetTypeID() ? value : NULL;
 }
 
-CFMutableDictionaryRef ipad2jb_keyboard_description(CFDictionaryRef stock, int selected) {
+CFMutableDictionaryRef ios2kbd_keyboard_description(CFDictionaryRef stock, int selected) {
     CFArrayRef configs = configurations(stock);
     if (!configs || selected < 1 || selected > CFArrayGetCount(configs)) return NULL;
     CFTypeRef source = CFArrayGetValueAtIndex(configs, selected - 1);
@@ -117,14 +117,14 @@ CFMutableDictionaryRef ipad2jb_keyboard_description(CFDictionaryRef stock, int s
     return result;
 }
 
-bool ipad2jb_is_keyboard_description(CFDictionaryRef description) {
+bool ios2kbd_is_keyboard_description(CFDictionaryRef description) {
     CFArrayRef configs = configurations(description);
     if (!configs || CFArrayGetCount(configs) != 1) return false;
     CFArrayRef names = interface_names(CFArrayGetValueAtIndex(configs, 0));
     return names && CFArrayContainsValue(names, CFRangeMake(0, CFArrayGetCount(names)), CFSTR("Keyboard"));
 }
 
-CFSetRef ipad2jb_function_names(CFDictionaryRef description) {
+CFSetRef ios2kbd_function_names(CFDictionaryRef description) {
     CFMutableSetRef functions = CFSetCreateMutable(kCFAllocatorDefault, 0, &kCFTypeSetCallBacks);
     CFArrayRef configs = configurations(description);
     for (CFIndex i = 0; configs && i < CFArrayGetCount(configs); i++) {
@@ -175,11 +175,11 @@ static CFDictionaryRef load_stock(const char *path) {
 
 // --- waiting ----------------------------------------------------------------
 
-typedef bool (*condition)(const ipad2jb_env *env, const void *argument);
+typedef bool (*condition)(const ios2kbd_env *env, const void *argument);
 
 // Poll `done` every `interval_ms` until it holds or `timeout_ms` of sleeping
 // has passed. The restore deliberately ignores interruption.
-static bool wait_until(const ipad2jb_env *env, condition done, const void *argument,
+static bool wait_until(const ios2kbd_env *env, condition done, const void *argument,
                        unsigned timeout_ms, unsigned interval_ms, bool stop_on_interrupt) {
     for (unsigned slept = 0;; slept += interval_ms) {
         if (done(env, argument)) return true;
@@ -188,19 +188,19 @@ static bool wait_until(const ipad2jb_env *env, condition done, const void *argum
     }
 }
 
-static bool functions_registered(const ipad2jb_env *env, const void *functions) {
+static bool functions_registered(const ios2kbd_env *env, const void *functions) {
     return env->usb.functions_registered(env->usb.context, functions);
 }
 
-static bool host_selected_configuration(const ipad2jb_env *env, const void *unused) {
+static bool host_selected_configuration(const ios2kbd_env *env, const void *unused) {
     (void)unused;
     return env->usb.selected_configuration(env->usb.context) > 0;
 }
 
-static bool host_reading_keyboard(const ipad2jb_env *env, const void *unused) {
+static bool host_reading_keyboard(const ios2kbd_env *env, const void *unused) {
     (void)unused;
     return env->keyboard.host_selected(env->keyboard.context) &&
-           env->keyboard.send(env->keyboard.context, neutral_report) == IPAD2JB_SEND_OK;
+           env->keyboard.send(env->keyboard.context, neutral_report) == IOS2KBD_SEND_OK;
 }
 
 // --- restoring --------------------------------------------------------------
@@ -208,10 +208,10 @@ static bool host_reading_keyboard(const ipad2jb_env *env, const void *unused) {
 // Publish the saved stock description until every stock function registers,
 // then give a host a moment to select a configuration again. The file is
 // removed once the functions are back, host or not.
-static ipad2jb_restore restore_stock(const ipad2jb_env *env) {
+static ios2kbd_restore restore_stock(const ios2kbd_env *env) {
     CFDictionaryRef stock = load_stock(env->stock_path);
-    if (!stock) return IPAD2JB_NOTHING_TO_RESTORE;
-    CFSetRef functions = ipad2jb_function_names(stock);
+    if (!stock) return IOS2KBD_NOTHING_TO_RESTORE;
+    CFSetRef functions = ios2kbd_function_names(stock);
     bool registered = false;
     for (int attempt = 0; attempt < RESTORE_ATTEMPTS && !registered; attempt++) {
         if (!env->usb.publish(env->usb.context, stock)) { env->sleep_ms(REPUBLISH_DELAY_MS); continue; }
@@ -220,18 +220,18 @@ static ipad2jb_restore restore_stock(const ipad2jb_env *env) {
     }
     CFRelease(functions);
     CFRelease(stock);
-    if (!registered) return IPAD2JB_RESTORE_FAILED;
+    if (!registered) return IOS2KBD_RESTORE_FAILED;
     unlink(env->stock_path);
     return wait_until(env, host_selected_configuration, NULL, HOST_RESELECT_WAIT_MS, RESTORE_POLL_MS, false)
-        ? IPAD2JB_RESTORED : IPAD2JB_RESTORED_NO_HOST;
+        ? IOS2KBD_RESTORED : IOS2KBD_RESTORED_NO_HOST;
 }
 
-static const char *restore_message(ipad2jb_restore restore) {
+static const char *restore_message(ios2kbd_restore restore) {
     switch (restore) {
-    case IPAD2JB_RESTORED: return "normal USB restored";
-    case IPAD2JB_RESTORED_NO_HOST: return "normal USB restored (no host reconnected)";
-    case IPAD2JB_RESTORE_FAILED: return "USB not back yet; run ipad2jb again or replug the cable";
-    case IPAD2JB_NOTHING_TO_RESTORE: return "nothing to restore";
+    case IOS2KBD_RESTORED: return "normal USB restored";
+    case IOS2KBD_RESTORED_NO_HOST: return "normal USB restored (no host reconnected)";
+    case IOS2KBD_RESTORE_FAILED: return "USB not back yet; run ios2kbd again or replug the cable";
+    case IOS2KBD_NOTHING_TO_RESTORE: return "nothing to restore";
     }
     return "";
 }
@@ -240,44 +240,44 @@ static const char *restore_message(ipad2jb_restore restore) {
 
 // Offer neutral reports for `milliseconds`. A timed-out offer only means the
 // host did not poll in that slice; any other failure means it went away.
-static bool hold_neutral(const ipad2jb_env *env, unsigned milliseconds) {
+static bool hold_neutral(const ios2kbd_env *env, unsigned milliseconds) {
     for (unsigned elapsed = 0; elapsed < milliseconds && !*env->interrupted; elapsed += NEUTRAL_INTERVAL_MS) {
-        if (env->keyboard.send(env->keyboard.context, neutral_report) == IPAD2JB_SEND_FAILED) return false;
+        if (env->keyboard.send(env->keyboard.context, neutral_report) == IOS2KBD_SEND_FAILED) return false;
         env->sleep_ms(NEUTRAL_INTERVAL_MS);
     }
     return true;
 }
 
-static bool send_key(const ipad2jb_env *env, uint8_t modifier, uint8_t usage) {
-    uint8_t report[IPAD2JB_REPORT_LENGTH] = { 0 };
+static bool send_key(const ios2kbd_env *env, uint8_t modifier, uint8_t usage) {
+    uint8_t report[IOS2KBD_REPORT_LENGTH] = { 0 };
     report[0] = modifier;
     report[2] = usage;
-    if (env->keyboard.send(env->keyboard.context, report) != IPAD2JB_SEND_OK) return false;
+    if (env->keyboard.send(env->keyboard.context, report) != IOS2KBD_SEND_OK) return false;
     if (env->turbo_typing || env->fast_typing) env->sleep_ms(env->turbo_typing ? 5 : 10);
-    return env->keyboard.send(env->keyboard.context, neutral_report) == IPAD2JB_SEND_OK;
+    return env->keyboard.send(env->keyboard.context, neutral_report) == IOS2KBD_SEND_OK;
 }
 
-static bool press_and_release(const ipad2jb_env *env, char c) {
+static bool press_and_release(const ios2kbd_env *env, char c) {
     uint8_t modifier, usage;
-    return ipad2jb_keycode(c, &modifier, &usage) && send_key(env, modifier, usage);
+    return ios2kbd_keycode(c, &modifier, &usage) && send_key(env, modifier, usage);
 }
 
-static ipad2jb_typing type_text(const ipad2jb_env *env, const char *text) {
+static ios2kbd_typing type_text(const ios2kbd_env *env, const char *text) {
     if (!wait_until(env, host_reading_keyboard, NULL, POLL_WAIT_MS, POLL_INTERVAL_MS, true))
-        return *env->interrupted ? IPAD2JB_INTERRUPTED : IPAD2JB_NEVER_POLLED;
+        return *env->interrupted ? IOS2KBD_INTERRUPTED : IOS2KBD_NEVER_POLLED;
     env->say("host is reading the keyboard; typing");
-    if (!hold_neutral(env, SETTLE_MS)) return IPAD2JB_HOST_LOST;
+    if (!hold_neutral(env, SETTLE_MS)) return IOS2KBD_HOST_LOST;
     unsigned key_gap = env->turbo_typing ? 0 : env->fast_typing ? 5 : KEY_GAP_MS;
     unsigned line_gap = (env->turbo_typing || env->fast_typing) ? 100 : 300;
     for (const char *c = text; *c; c++) {
-        if (*env->interrupted) return IPAD2JB_INTERRUPTED;
-        if (!press_and_release(env, *c)) return IPAD2JB_HOST_LOST;
+        if (*env->interrupted) return IOS2KBD_INTERRUPTED;
+        if (!press_and_release(env, *c)) return IOS2KBD_HOST_LOST;
         env->sleep_ms(*c == '\n' ? line_gap : key_gap);
         if (*c == '\n' && env->clear_autoindent) {
             // The new line contains only the editor's inherited indentation.
             // Home, Shift+End, Delete clears it without joining empty lines.
             if (!send_key(env, 0, 0x4A) || !send_key(env, LEFT_SHIFT, 0x4D) ||
-                !send_key(env, 0, 0x4C)) return IPAD2JB_HOST_LOST;
+                !send_key(env, 0, 0x4C)) return IOS2KBD_HOST_LOST;
             env->sleep_ms(key_gap);
         }
         size_t typed = (size_t)(c - text) + 1;
@@ -287,38 +287,38 @@ static ipad2jb_typing type_text(const ipad2jb_env *env, const char *text) {
             env->say(message);
         }
     }
-    if (*env->interrupted) return IPAD2JB_INTERRUPTED;
-    return hold_neutral(env, HOLD_MS) ? IPAD2JB_TYPED : IPAD2JB_HOST_LOST;
+    if (*env->interrupted) return IOS2KBD_INTERRUPTED;
+    return hold_neutral(env, HOLD_MS) ? IOS2KBD_TYPED : IOS2KBD_HOST_LOST;
 }
 
 // --- the run ----------------------------------------------------------------
 
-static ipad2jb_typing publish_and_type(const ipad2jb_env *env, CFDictionaryRef keyboard_description,
+static ios2kbd_typing publish_and_type(const ios2kbd_env *env, CFDictionaryRef keyboard_description,
                                        const char *text) {
     if (!env->usb.publish(env->usb.context, keyboard_description)) {
         env->say("the controller refused the keyboard description");
-        return IPAD2JB_PUBLISH_FAILED;
+        return IOS2KBD_PUBLISH_FAILED;
     }
     const char *failed_step = "unknown";
     if (!env->keyboard.open(env->keyboard.context, &failed_step)) {
         char message[128];
         snprintf(message, sizeof(message), "could not set up the keyboard function (%s)", failed_step);
         env->say(message);
-        return IPAD2JB_SETUP_FAILED;
+        return IOS2KBD_SETUP_FAILED;
     }
     env->say("keyboard published");
     return type_text(env, text);
 }
 
-ipad2jb_outcome ipad2jb_run(const ipad2jb_env *env, const char *text) {
-    ipad2jb_outcome outcome = { IPAD2JB_PREPARE_FAILED, IPAD2JB_NOTHING_TO_RESTORE };
+ios2kbd_outcome ios2kbd_run(const ios2kbd_env *env, const char *text) {
+    ios2kbd_outcome outcome = { IOS2KBD_PREPARE_FAILED, IOS2KBD_NOTHING_TO_RESTORE };
 
     if (access(env->stock_path, F_OK) == 0) {
         env->say("restoring USB left over from an earlier run");
-        if (restore_stock(env) == IPAD2JB_RESTORE_FAILED) {
+        if (restore_stock(env) == IOS2KBD_RESTORE_FAILED) {
             env->say("could not restore; replug the cable or reboot");
-            outcome.typing = IPAD2JB_LEFTOVER_FAILED;
-            outcome.restore = IPAD2JB_RESTORE_FAILED;
+            outcome.typing = IOS2KBD_LEFTOVER_FAILED;
+            outcome.restore = IOS2KBD_RESTORE_FAILED;
             return outcome;
         }
     }
@@ -326,14 +326,14 @@ ipad2jb_outcome ipad2jb_run(const ipad2jb_env *env, const char *text) {
     CFMutableDictionaryRef stock = env->usb.live_description(env->usb.context);
     int selected = env->usb.selected_configuration(env->usb.context);
     if (!stock) { env->say("USB device controller unavailable"); return outcome; }
-    if (ipad2jb_is_keyboard_description(stock)) {
+    if (ios2kbd_is_keyboard_description(stock)) {
         env->say("USB is not in its stock state; reboot");
-        outcome.typing = IPAD2JB_NOT_STOCK;
+        outcome.typing = IOS2KBD_NOT_STOCK;
     } else if (selected < 1) {
         env->say("no USB host has selected a configuration; plug into the host first");
-        outcome.typing = IPAD2JB_NO_HOST;
+        outcome.typing = IOS2KBD_NO_HOST;
     } else {
-        CFMutableDictionaryRef keyboard_description = ipad2jb_keyboard_description(stock, selected);
+        CFMutableDictionaryRef keyboard_description = ios2kbd_keyboard_description(stock, selected);
         if (!keyboard_description || !save_stock(env->stock_path, stock)) {
             env->say("could not prepare the keyboard description");
         } else {

@@ -1,4 +1,4 @@
-// The device side of ipad2jb: the iPad's USB device controller (private
+// The device side of ios2kbd: the device's USB device controller (private
 // IOUSBDeviceController API) and the Keyboard function's
 // IOUSBDeviceInterfaceUserClient. Selector numbers and argument shapes follow
 // vendor/libusbd/src/plat/macos/impl.c, which drives the same user client on
@@ -89,7 +89,7 @@ static bool usb_functions_registered(void *context, CFSetRef functions) {
     return complete;
 }
 
-bool ipad2jb_iokit_usb(ipad2jb_usb *out) {
+bool ios2kbd_iokit_usb(ios2kbd_usb *out) {
     void *iokit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
     if (!iokit) return false;
     usb.create = dlsym(iokit, "IOUSBDeviceControllerCreate");
@@ -101,7 +101,7 @@ bool ipad2jb_iokit_usb(ipad2jb_usb *out) {
         !usb.set_description || usb.create(kCFAllocatorDefault, &usb.controller) != kIOReturnSuccess ||
         !usb.controller)
         return false;
-    *out = (ipad2jb_usb){ NULL, usb_live_description, usb_publish, usb_selected_configuration,
+    *out = (ios2kbd_usb){ NULL, usb_live_description, usb_publish, usb_selected_configuration,
                           usb_functions_registered };
     return true;
 }
@@ -186,7 +186,7 @@ static void class_request(void *refcon, IOReturn result, void **arguments, uint3
     uint8_t request_type = (argument[1] >> 24) & 0xFF, request = (argument[1] >> 16) & 0xFF;
     uint16_t length = argument[2] & 0xFFFF;
     uint64_t token = argument[4];
-    size_t reply = ipad2jb_class_reply(request_type, request, length,
+    size_t reply = ios2kbd_class_reply(request_type, request, length,
                                        (uint8_t *)(uintptr_t)keyboard.class_replies.address,
                                        (size_t)keyboard.class_replies.size);
     uint64_t complete[5] = { 1, reply, keyboard.class_replies.address, 0, token };
@@ -204,7 +204,7 @@ static bool serve_class_requests(void) {
     keyboard.port = IONotificationPortCreate(kIOMainPortDefault);
     if (!keyboard.port) return false;
     IONotificationPortSetDispatchQueue(keyboard.port,
-                                       dispatch_queue_create("ipad2jb.class-requests", DISPATCH_QUEUE_SERIAL));
+                                       dispatch_queue_create("ios2kbd.class-requests", DISPATCH_QUEUE_SERIAL));
     mach_port_t port = IONotificationPortGetMachPort(keyboard.port);
     uint64_t reference[kOSAsyncRef64Count] = { 0 };
     reference[kIOAsyncReservedIndex] = port;
@@ -275,14 +275,14 @@ static bool keyboard_host_selected(void *context) {
     return call(SEL_PIPE_MAX_PACKET, pipe, 1, &max_packet, 1) == 0 && max_packet > 0;
 }
 
-static ipad2jb_send_result keyboard_send(void *context, const uint8_t report[IPAD2JB_REPORT_LENGTH]) {
+static ios2kbd_send_result keyboard_send(void *context, const uint8_t report[IOS2KBD_REPORT_LENGTH]) {
     (void)context;
-    memcpy((void *)(uintptr_t)keyboard.reports.address, report, IPAD2JB_REPORT_LENGTH);
-    uint64_t write[4] = { keyboard.pipe, keyboard.reports.token, IPAD2JB_REPORT_LENGTH, WRITE_TIMEOUT_MS };
+    memcpy((void *)(uintptr_t)keyboard.reports.address, report, IOS2KBD_REPORT_LENGTH);
+    uint64_t write[4] = { keyboard.pipe, keyboard.reports.token, IOS2KBD_REPORT_LENGTH, WRITE_TIMEOUT_MS };
     uint64_t transferred = 0;
     kern_return_t status = call(SEL_WRITE_PIPE, write, 4, &transferred, 1);
-    if (status == kIOReturnSuccess) return IPAD2JB_SEND_OK;
-    return status == kIOReturnTimeout ? IPAD2JB_SEND_TIMEOUT : IPAD2JB_SEND_FAILED;
+    if (status == kIOReturnSuccess) return IOS2KBD_SEND_OK;
+    return status == kIOReturnTimeout ? IOS2KBD_SEND_TIMEOUT : IOS2KBD_SEND_FAILED;
 }
 
 static void keyboard_close(void *context) {
@@ -291,7 +291,7 @@ static void keyboard_close(void *context) {
     keyboard.connection = IO_OBJECT_NULL;
 }
 
-void ipad2jb_iokit_keyboard(ipad2jb_keyboard *out, unsigned poll_interval) {
+void ios2kbd_iokit_keyboard(ios2kbd_keyboard *out, unsigned poll_interval) {
     keyboard.poll_interval = poll_interval;
-    *out = (ipad2jb_keyboard){ NULL, keyboard_open, keyboard_host_selected, keyboard_send, keyboard_close };
+    *out = (ios2kbd_keyboard){ NULL, keyboard_open, keyboard_host_selected, keyboard_send, keyboard_close };
 }
