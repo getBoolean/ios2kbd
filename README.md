@@ -14,7 +14,9 @@ Only one device has been tested so far:
 
 | Device | OS | Jailbreak | Targets typed into |
 | --- | --- | --- | --- |
-| iPad Pro 12.9-inch (6th generation, M2, `iPad14,5`) | iPadOS 17.0 | Dopamine (rootless) | Nintendo Switch 2 (SmileBASIC), macOS |
+| iPad Pro 12.9-inch (6th generation, M2, `iPad14,5`) | iPadOS 17.0 | Dopamine (rootless) | Nintendo Switch 2 (SmileBASIC), macOS, Windows |
+
+The Switch 2 and macOS were tested before keyboard mode switched to its own USB ID (see [How it works](#how-it-works)). They haven't been retested since.
 
 ### Should work, untested
 
@@ -38,7 +40,7 @@ If you try another device, please open an issue with the model, OS version, jail
 
 ### Targets
 
-Nothing in ios2kbd is specific to one target. The target can be any USB host that accepts a standard USB keyboard: Windows, Linux, macOS, Android, game consoles and so on. Only the Switch 2 and macOS have been tested. Limits:
+Nothing in ios2kbd is specific to one target. The target can be any USB host that accepts a standard USB keyboard: Windows, Linux, macOS, Android, game consoles and so on. Only the Switch 2, macOS and Windows have been tested. Limits:
 
 - Text must be printable ASCII and line breaks, typed with a US English layout. Set the target to that layout.
 - The target must already have set up the iPhone or iPad as a normal USB device before you run ios2kbd. If it hasn't, ios2kbd stops with "no USB host has selected a configuration". Some chargers and TVs may never do this.
@@ -83,13 +85,17 @@ This only types the source. Save and run it in SmileBASIC afterward.
 ## How it works
 
 1. Saves the stock USB device description to `/var/jb/var/lib/ios2kbd/stock-description.plist`.
-2. Publishes one "Standard Keyboard" USB configuration and sets up the HID function.
+2. Publishes one "Standard Keyboard" USB configuration and sets up the HID function. In keyboard mode the device reports USB ID `1209:0001` instead of Apple's. Otherwise Apple's Windows driver (installed with iTunes, the Apple Devices app or Windows Update) claims the whole device, and Windows never loads a keyboard driver.
 3. Answers the host's HID class requests and waits until the host polls the keyboard.
 4. Types the text, then restores the saved stock description and deletes the saved copy.
+
+Sometimes, after the restore, the controller stays off the bus without the host noticing: the USB-C SuperSpeed link stays up, so the host sees no disconnect. If no host reconnects within 10 s, ios2kbd publishes a different description for 1 s and then the stock one again, which puts it back on the bus. A run that starts with no host does the same once before giving up, so a device stuck this way recovers without replugging the cable.
 
 Ctrl-C or closing the terminal stops the typing, but the restore still runs. If a run dies before restoring, the next run restores the saved description first.
 
 ## Development
+
+The keyboard-mode USB ID `1209:0001` is a [pid.codes](https://pid.codes) test ID. Replace it with a permanent pid.codes ID (`IOS2KBD_VENDOR_ID` and `IOS2KBD_PRODUCT_ID` in `ios2kbd.h`) before a release.
 
 You need a Mac with Xcode, and SSH access to a jailbroken test device.
 

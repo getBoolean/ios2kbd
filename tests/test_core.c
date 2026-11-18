@@ -66,6 +66,7 @@ typedef struct {
     CFMutableDictionaryRef live;
     int selected;                 // what the host has selected right now
     int selected_after_restore;   // what the host selects after a stock publish
+    int stuck_stock_publishes;    // the first stock publishes leave the controller off the bus
     int register_after_polls;     // polls before freshly published functions register
     int polls;
     int publishes, stock_publishes;
@@ -86,7 +87,7 @@ static bool fake_publish(void *context, CFDictionaryRef description) {
     usb->polls = 0;
     if (!ios2kbd_is_keyboard_description(description)) {
         usb->stock_publishes++;
-        usb->selected = usb->selected_after_restore;
+        usb->selected = usb->stock_publishes > usb->stuck_stock_publishes ? usb->selected_after_restore : 0;
     }
     return true;
 }
@@ -236,7 +237,12 @@ static void test_keyboard_description(void) {
     CHECK(!CFDictionaryContainsKey(only, CFSTR("ExtendedConfiguration")), "stock-only keys dropped");
     CHECK(CFDictionaryContainsKey(only, CFSTR("MaxPower")) && CFDictionaryContainsKey(only, CFSTR("Attributes")),
           "power and attributes kept from the selected configuration");
-    CHECK(CFDictionaryContainsKey(keyboard, CFSTR("vendorID")), "device fields kept");
+    int vendor = 0, product = 0;
+    CFNumberGetValue(CFDictionaryGetValue(keyboard, CFSTR("vendorID")), kCFNumberIntType, &vendor);
+    CFNumberGetValue(CFDictionaryGetValue(keyboard, CFSTR("productID")), kCFNumberIntType, &product);
+    CHECK(vendor == IOS2KBD_VENDOR_ID && product == IOS2KBD_PRODUCT_ID,
+          "keyboard reports its own USB IDs so Apple's Windows driver does not claim it");
+    CHECK(CFDictionaryContainsKey(keyboard, CFSTR("ConfigurationDescriptors")), "device fields kept");
     CHECK(ios2kbd_is_keyboard_description(keyboard) && !ios2kbd_is_keyboard_description(stock), "detected");
     CHECK(ios2kbd_keyboard_description(stock, 0) == NULL && ios2kbd_keyboard_description(stock, 4) == NULL,
           "out-of-range configuration refused");
@@ -328,9 +334,35 @@ static void test_interrupt_during_typing(void) {
 static void test_no_host(void) {
     harness h; harness_init(&h);
     h.usb.selected = 0;
+    h.usb.selected_after_restore = 0;   // no cable
     ios2kbd_outcome outcome = ios2kbd_run(&h.env, "ios2kbd");
     CHECK(outcome.typing == IOS2KBD_NO_HOST && outcome.restore == IOS2KBD_NOTHING_TO_RESTORE, "no host");
-    CHECK(h.usb.publishes == 0 && !file_exists(h.stock_path), "nothing published or saved");
+    CHECK(h.usb.publishes == 2 && h.usb.stock_publishes == 1, "one reattach attempt (got %d publishes)",
+          h.usb.publishes);
+    CHECK(!ios2kbd_is_keyboard_description(h.usb.live) && !file_exists(h.stock_path), "stock live, nothing saved");
+    CHECK(h.keyboard.sent_count == 0, "nothing typed");
+    harness_free(&h);
+}
+
+static void test_stuck_off_bus_at_start(void) {
+    harness h; harness_init(&h);
+    h.usb.selected = 0;                 // a host is attached but the controller is off the bus
+    ios2kbd_outcome outcome = ios2kbd_run(&h.env, "ab");
+    char typed[16]; typed_text(&h.keyboard, typed, sizeof(typed));
+    CHECK(outcome.typing == IOS2KBD_TYPED && strcmp(typed, "ab") == 0, "reattached, then typed (got %d)",
+          outcome.typing);
+    CHECK(outcome.restore == IOS2KBD_RESTORED, "restored (got %d)", outcome.restore);
+    harness_free(&h);
+}
+
+static void test_stuck_off_bus_after_restore(void) {
+    harness h; harness_init(&h);
+    h.usb.stuck_stock_publishes = 1;    // the restore leaves the controller off the bus
+    ios2kbd_outcome outcome = ios2kbd_run(&h.env, "ab");
+    CHECK(outcome.typing == IOS2KBD_TYPED, "typed");
+    CHECK(outcome.restore == IOS2KBD_RESTORED, "reattached after the restore (got %d)", outcome.restore);
+    CHECK(h.usb.stock_publishes == 2 && h.usb.selected == 1, "stock published again after another description");
+    CHECK(!ios2kbd_is_keyboard_description(h.usb.live) && !file_exists(h.stock_path), "stock live, saved copy removed");
     harness_free(&h);
 }
 
@@ -375,7 +407,8 @@ static void test_restore_without_host_is_quick(void) {
     ios2kbd_outcome outcome = ios2kbd_run(&h.env, "ios2kbd");
     CHECK(outcome.typing == IOS2KBD_TYPED, "typed");
     CHECK(outcome.restore == IOS2KBD_RESTORED_NO_HOST, "restored without a host (got %d)", outcome.restore);
-    CHECK(h.usb.stock_publishes == 1, "stock published once, not retried (got %d)", h.usb.stock_publishes);
+    CHECK(h.usb.stock_publishes == 2, "one reattach attempt, no more (got %d)", h.usb.stock_publishes);
+    CHECK(!ios2kbd_is_keyboard_description(h.usb.live), "stock left live");
     CHECK(!file_exists(h.stock_path), "saved stock removed once the functions are back");
     harness_free(&h);
 }
@@ -417,6 +450,8 @@ int main(void) {
     test_interrupt_during_typing();
     test_no_host();
     test_leftover_keyboard_description();
+    test_stuck_off_bus_at_start();
+    test_stuck_off_bus_after_restore();
     test_never_polled();
     test_host_lost_mid_typing();
     test_setup_failure_restores();

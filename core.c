@@ -25,6 +25,8 @@ enum {
     RESTORE_POLL_MS = 500,
     HOST_RESELECT_WAIT_MS = 10000,
     REPUBLISH_DELAY_MS = 1000,
+    REATTACH_HOLD_MS = 1000,     // how long the other description stays published
+    REATTACH_WAIT_MS = 5000,     // for a host to select a configuration after reattaching
 };
 
 #define MAX_CLASS_REPLY 64
@@ -111,6 +113,13 @@ CFMutableDictionaryRef ios2kbd_keyboard_description(CFDictionaryRef stock, int s
     CFArrayRef single = CFArrayCreate(kCFAllocatorDefault, only, 1, &kCFTypeArrayCallBacks);
     CFMutableDictionaryRef result = CFDictionaryCreateMutableCopy(kCFAllocatorDefault, 0, stock);
     CFDictionarySetValue(result, CFSTR("ConfigurationDescriptors"), single);
+    const int vendor = IOS2KBD_VENDOR_ID, product = IOS2KBD_PRODUCT_ID;
+    CFNumberRef vendor_number = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &vendor);
+    CFNumberRef product_number = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &product);
+    CFDictionarySetValue(result, CFSTR("vendorID"), vendor_number);
+    CFDictionarySetValue(result, CFSTR("productID"), product_number);
+    CFRelease(vendor_number);
+    CFRelease(product_number);
     CFRelease(interfaces);
     CFRelease(keyboard);
     CFRelease(single);
@@ -205,6 +214,27 @@ static bool host_reading_keyboard(const ios2kbd_env *env, const void *unused) {
 
 // --- restoring --------------------------------------------------------------
 
+// Sometimes the controller stays off the bus after the stock description is
+// published (DeviceState Disconnected, OnBus 0) while a SuperSpeed link stays
+// up, so the host never notices and never reconfigures it. Publishing the same
+// description again changes nothing, but publishing a different description
+// and then the stock one puts it back on the bus. Seen with Windows on an M2
+// iPad; recovered every time in testing.
+static bool reattach(const ios2kbd_env *env, CFDictionaryRef stock) {
+    CFMutableDictionaryRef other = ios2kbd_keyboard_description(stock, 1);
+    if (!other) return false;
+    bool published = env->usb.publish(env->usb.context, other);
+    CFRelease(other);
+    if (!published) return false;
+    env->sleep_ms(REATTACH_HOLD_MS);
+    CFSetRef functions = ios2kbd_function_names(stock);
+    bool registered = env->usb.publish(env->usb.context, stock) &&
+                      wait_until(env, functions_registered, functions, REGISTER_WAIT_MS, RESTORE_POLL_MS, false);
+    CFRelease(functions);
+    return registered &&
+           wait_until(env, host_selected_configuration, NULL, REATTACH_WAIT_MS, RESTORE_POLL_MS, false);
+}
+
 // Publish the saved stock description until every stock function registers,
 // then give a host a moment to select a configuration again. The file is
 // removed once the functions are back, host or not.
@@ -219,11 +249,15 @@ static ios2kbd_restore restore_stock(const ios2kbd_env *env) {
                                 REGISTER_WAIT_MS, RESTORE_POLL_MS, false);
     }
     CFRelease(functions);
+    if (!registered) { CFRelease(stock); return IOS2KBD_RESTORE_FAILED; }
+    bool host = wait_until(env, host_selected_configuration, NULL, HOST_RESELECT_WAIT_MS, RESTORE_POLL_MS, false);
+    if (!host) {
+        env->say("no host reconnected; reattaching");
+        host = reattach(env, stock);
+    }
     CFRelease(stock);
-    if (!registered) return IOS2KBD_RESTORE_FAILED;
     unlink(env->stock_path);
-    return wait_until(env, host_selected_configuration, NULL, HOST_RESELECT_WAIT_MS, RESTORE_POLL_MS, false)
-        ? IOS2KBD_RESTORED : IOS2KBD_RESTORED_NO_HOST;
+    return host ? IOS2KBD_RESTORED : IOS2KBD_RESTORED_NO_HOST;
 }
 
 static const char *restore_message(ios2kbd_restore restore) {
@@ -326,6 +360,12 @@ ios2kbd_outcome ios2kbd_run(const ios2kbd_env *env, const char *text) {
     CFMutableDictionaryRef stock = env->usb.live_description(env->usb.context);
     int selected = env->usb.selected_configuration(env->usb.context);
     if (!stock) { env->say("USB device controller unavailable"); return outcome; }
+    if (selected < 1 && !ios2kbd_is_keyboard_description(stock) && save_stock(env->stock_path, stock)) {
+        // Maybe a cable is attached but the controller is stuck off the bus.
+        env->say("no USB host has selected a configuration; reattaching");
+        if (reattach(env, stock)) selected = env->usb.selected_configuration(env->usb.context);
+        unlink(env->stock_path);
+    }
     if (ios2kbd_is_keyboard_description(stock)) {
         env->say("USB is not in its stock state; reboot");
         outcome.typing = IOS2KBD_NOT_STOCK;

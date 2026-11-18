@@ -16,6 +16,13 @@
 #define IOS2KBD_REPORT_LENGTH 8
 #define IOS2KBD_MAX_TEXT (1024 * 1024)
 
+// USB IDs the keyboard description reports. The stock Apple IDs make Apple's
+// Windows driver (usbaapl64) claim the whole device, so Windows never loads a
+// keyboard driver. 1209:0001 is a pid.codes test ID, used until ios2kbd has its
+// own pid.codes product ID.
+#define IOS2KBD_VENDOR_ID 0x1209
+#define IOS2KBD_PRODUCT_ID 0x0001
+
 // --- pure helpers -----------------------------------------------------------
 
 // US-layout boot-keyboard usage for printable ASCII and newline.
