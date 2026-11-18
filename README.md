@@ -12,6 +12,14 @@ Plug it into a computer or console over USB-C, and ios2kbd types text or a file 
 - A terminal with root on the device, such as NewTerm
 - A USB-C data cable, with the target's keyboard layout set to US English
 
+## Install
+
+Download `ios2kbd_<version>_iphoneos-arm64.deb` from the [latest release](https://github.com/getBoolean/ios2kbd/releases/latest) and install it with Sileo, Zebra or Filza, or in a root terminal on the device:
+
+```sh
+dpkg -i ios2kbd_<version>_iphoneos-arm64.deb
+```
+
 ## Usage
 
 Plug into the target, focus a text field there, then run on the device:
@@ -87,7 +95,10 @@ Needs a Mac with Xcode and SSH access to a test device.
 ./install.sh root@<device-address>   # build and install over SSH
 ./build.sh                           # build only, into build/ios2kbd
 ./test.sh                            # host tests with sanitizers
+./package.sh 1.2.3                   # binary, .deb and SHA256SUMS in build/release
 ```
+
+CI builds and tests every push and pull request. Pushing a tag like `v1.2.3` publishes a GitHub release with the binary, the `.deb` and `SHA256SUMS`.
 
 `1209:0001` is a [pid.codes](https://pid.codes) test ID. Replace it with a permanent ID in `ios2kbd.h` before a release.
 
