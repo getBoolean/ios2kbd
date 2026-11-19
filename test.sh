@@ -8,3 +8,6 @@ trap 'rm -rf "$out"' EXIT
 clang -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined \
     -framework CoreFoundation "$here/core.c" "$here/tests/test_core.c" -o "$out/test_core"
 "$out/test_core"
+clang -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined \
+    -framework CoreFoundation "$here/core.c" "$here/tests/test_cli.c" -o "$out/test_cli"
+"$out/test_cli"
