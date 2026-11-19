@@ -299,6 +299,25 @@ static void test_clears_autoindent(void) {
     harness_free(&h);
 }
 
+static void test_skips_autoindent_clearing(void) {
+    for (int mac = 0; mac < 2; mac++) {
+        harness h; harness_init(&h);
+        h.env.clear_autoindent = false;
+        h.env.mac_line_keys = mac;
+        ios2kbd_outcome outcome = ios2kbd_run(&h.env, "A\n B\n");
+        CHECK(outcome.typing == IOS2KBD_TYPED && outcome.restore == IOS2KBD_RESTORED,
+              "typing without clearing restores USB");
+        uint8_t keys[16];
+        int count = 0;
+        for (int i = 0; i < h.keyboard.sent_count && count < 16; i++)
+            if (h.keyboard.sent[i][2]) keys[count++] = h.keyboard.sent[i][2];
+        const uint8_t expected[] = {0x04, 0x28, 0x2C, 0x05, 0x28};
+        CHECK(count == 5 && memcmp(keys, expected, sizeof(expected)) == 0,
+              "disabled clearing preserves source spaces and newlines (mac=%d)", mac);
+        harness_free(&h);
+    }
+}
+
 static void test_final_newline_keeps_last_line(void) {
     harness h; harness_init(&h);
     h.env.clear_autoindent = true;
@@ -486,6 +505,7 @@ static void test_leftover_is_restored_first(void) {
 int main(void) {
     test_keycodes();
     test_clears_autoindent();
+    test_skips_autoindent_clearing();
     test_clears_autoindent_with_mac_keys();
     test_final_newline_keeps_last_line();
     test_compensates_host_caps_lock();

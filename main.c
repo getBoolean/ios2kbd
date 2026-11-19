@@ -9,9 +9,11 @@
 #include <string.h>
 #include <unistd.h>
 
-#define USAGE "usage: ios2kbd [--mac] [--] [TEXT...]\n" \
-              "       ios2kbd [--mac] --file PATH\n" \
-              "TEXT or the file: 1-%d bytes of printable ASCII and newlines.\n"
+#define USAGE "usage: ios2kbd [--mac] [--no-clear-autoindent] [--] [TEXT...]\n" \
+              "       ios2kbd [--mac] [--no-clear-autoindent] --file PATH\n" \
+              "TEXT or the file: 1-%d bytes of printable ASCII and newlines.\n" \
+              "--file clears inherited auto-indent after Enter by default.\n" \
+              "--no-clear-autoindent skips clearing it; the editor setting is unchanged.\n"
 #define STOCK_PATH "/var/jb/var/lib/ios2kbd/stock-description.plist"
 
 static volatile sig_atomic_t interrupted = 0;
@@ -53,8 +55,13 @@ static bool read_file(const char *path, char *text) {
 
 int main(int argc, char **argv) {
     static char text[IOS2KBD_MAX_TEXT + 2];
-    bool mac = false;
-    while (argc > 1 && strcmp(argv[1], "--mac") == 0) { mac = true; argc--; argv++; }
+    bool mac = false, no_clear_autoindent = false;
+    while (argc > 1) {
+        if (strcmp(argv[1], "--mac") == 0) mac = true;
+        else if (strcmp(argv[1], "--no-clear-autoindent") == 0) no_clear_autoindent = true;
+        else break;
+        argc--; argv++;
+    }
     // A mistyped option must never be typed into the host as text. Text that
     // starts with "--" goes after a "--" separator.
     bool literal = argc > 1 && strcmp(argv[1], "--") == 0;
@@ -85,7 +92,7 @@ int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
 
     ios2kbd_env env = {
-        .clear_autoindent = file_mode, .mac_line_keys = mac,
+        .clear_autoindent = file_mode && !no_clear_autoindent, .mac_line_keys = mac,
         .stock_path = STOCK_PATH, .sleep_ms = sleep_ms, .say = say,
         .interrupted = &interrupted,
     };

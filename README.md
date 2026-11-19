@@ -27,14 +27,18 @@ Plug into the target, focus a text field there, then run on the device:
 ```sh
 sudo ios2kbd hello world
 sudo ios2kbd --file /var/mobile/bootstrap.bas
+sudo ios2kbd --no-clear-autoindent --file /var/mobile/sample.txt
 ```
 
 | Option | Effect |
 | --- | --- |
-| `--file PATH` | Type a file (up to 1 MiB of printable ASCII and line breaks). Clears the editor's auto-indent after each Enter. |
+| `--file PATH` | Type a file (up to 1 MiB of printable ASCII and line breaks). Clears the editor's inherited auto-indent after each non-final Enter by default. |
+| `--no-clear-autoindent` | Skip clearing inherited auto-indent when typing a file. Leaves the editor's own auto-indent setting unchanged. |
 | `--mac` | Clear auto-indent with macOS keys. Use with `--file` when typing into a Mac. |
 | `--` | Treat everything after it as text. |
 | `--help` | Print the usage. |
+
+Place `--mac` and `--no-clear-autoindent` before `--file PATH`, in either order. With both flags, auto-indent clearing is skipped.
 
 For SmileBASIC on the Switch 2, focus an empty program editor and run `sudo ios2kbd --file bootstrap.bas`. Then save and run it in SmileBASIC.
 
